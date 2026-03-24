@@ -19,7 +19,7 @@ hot-loads the plugin into the sidebar.
 Install as a Pi package:
 
 ```bash
-pi install npm:@sero-ai/plugin-google
+pi install git:https://github.com/monobyte/sero-google-plugin.git
 ```
 
 The agent gains two tools — `gmail` and `gcal` — plus `/gmail` and `/gcal`
