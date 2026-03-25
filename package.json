@@ -1,6 +1,6 @@
 {
   "name": "@sero-ai/plugin-google",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Google Workspace app for Sero — Gmail & Calendar with gogcli",
   "keywords": [
     "pi-package"
@@ -26,6 +26,44 @@
       "component": "GoogleApp",
       "devPort": 5186
     },
+    "widgets": [
+      {
+        "id": "mail-indicator",
+        "name": "Mail",
+        "component": "MailWidget",
+        "description": "Unread count and recent inbox threads",
+        "defaultSize": {
+          "w": 2,
+          "h": 2
+        },
+        "minSize": {
+          "w": 2,
+          "h": 2
+        },
+        "maxSize": {
+          "w": 3,
+          "h": 3
+        }
+      },
+      {
+        "id": "mini-calendar",
+        "name": "Calendar",
+        "component": "CalendarWidget",
+        "description": "Month grid with event dots and upcoming events",
+        "defaultSize": {
+          "w": 2,
+          "h": 3
+        },
+        "minSize": {
+          "w": 2,
+          "h": 2
+        },
+        "maxSize": {
+          "w": 3,
+          "h": 4
+        }
+      }
+    ],
     "plugin": {
       "category": "integrations",
       "tags": [
