@@ -10,6 +10,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useAppState } from '@sero-ai/app-runtime';
 import type { GoogleAppState, CalendarEvent } from '../../shared/types';
 import { DEFAULT_GOOGLE_STATE } from '../../shared/types';
+import '../styles.css';
 
 // ── Date helpers ─────────────────────────────────────────────────
 

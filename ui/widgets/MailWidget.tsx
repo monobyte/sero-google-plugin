@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { useAppState } from '@sero-ai/app-runtime';
 import type { GoogleAppState, GmailThread } from '../../shared/types';
 import { DEFAULT_GOOGLE_STATE } from '../../shared/types';
+import '../styles.css';
 
 // ── Component ────────────────────────────────────────────────────
 
