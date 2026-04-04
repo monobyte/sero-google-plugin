@@ -17,6 +17,8 @@ interface SeroGoogleBridge {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   onAuthEvent: (cb: (event: { type: string; message: string; email?: string }) => void) => () => void;
+  getConfig: () => Promise<{ configured: boolean }>;
+  saveConfig: (clientId: string, clientSecret: string) => Promise<{ ok: boolean }>;
 }
 
 function getSeroGoogle(): SeroGoogleBridge | null {
@@ -25,7 +27,7 @@ function getSeroGoogle(): SeroGoogleBridge | null {
 
 // ── Auth types ───────────────────────────────────────────────
 
-export type AuthStatus = 'unknown' | 'checking' | 'not-configured' | 'signed-out' | 'signing-in' | 'authenticated';
+export type AuthStatus = 'unknown' | 'checking' | 'not-configured' | 'signed-out' | 'signing-in' | 'authenticated' | 'expired';
 
 export interface AuthInfo {
   status: AuthStatus;
@@ -42,6 +44,7 @@ export interface GoogleApi {
   checkAuth: () => Promise<void>;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  saveConfig: (clientId: string, clientSecret: string) => Promise<boolean>;
   fetchInbox: (query: string, max?: number) => Promise<void>;
   fetchThread: (threadId: string) => Promise<void>;
   fetchEvents: (view: 'today' | 'week') => Promise<void>;
@@ -50,6 +53,8 @@ export interface GoogleApi {
   sendEmail: (to: string, subject: string, body: string) => Promise<boolean>;
   archiveThread: (threadId: string) => Promise<boolean>;
 }
+
+const AUTH_ERROR_PATTERN = /401|unauthorized|token.*expired|token.*revoked|invalid.*credentials/i;
 
 // ── Hook ─────────────────────────────────────────────────────
 
@@ -115,6 +120,16 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
     updateState((prev) => ({ ...prev, activeAccount: null }));
   }, [updateState]);
 
+  const saveConfig = useCallback(async (clientId: string, clientSecret: string): Promise<boolean> => {
+    const api = getSeroGoogle();
+    if (!api) return false;
+    const result = await api.saveConfig(clientId, clientSecret);
+    if (result.ok) {
+      await checkAuth();
+    }
+    return result.ok;
+  }, [checkAuth]);
+
   // ── Data command executor ──────────────────────────────────
 
   const exec = useCallback(async (service: string, args: string[]): Promise<any | null> => {
@@ -127,6 +142,16 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
       if (result.exitCode === 127) { setError('gogcli not found'); return null; }
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim() || 'Command failed';
+
+        // Detect auth-related failures and transition to expired state
+        if (AUTH_ERROR_PATTERN.test(msg)) {
+          setAuth((prev) => ({
+            status: 'expired',
+            email: prev.email,
+            error: null,
+          }));
+        }
+
         setError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
         return null;
       }
@@ -236,8 +261,8 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
   }, [exec]);
 
   return useMemo(() => ({
-    loading, error, auth, checkAuth, signIn, signOut,
+    loading, error, auth, checkAuth, signIn, signOut, saveConfig,
     fetchInbox, fetchThread, fetchEvents, fetchEventsRange, fetchCalendars, sendEmail, archiveThread,
-  }), [loading, error, auth, checkAuth, signIn, signOut,
+  }), [loading, error, auth, checkAuth, signIn, signOut, saveConfig,
     fetchInbox, fetchThread, fetchEvents, fetchEventsRange, fetchCalendars, sendEmail, archiveThread]);
 }
