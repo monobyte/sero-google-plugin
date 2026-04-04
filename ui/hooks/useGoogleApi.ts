@@ -17,12 +17,21 @@ interface SeroGoogleBridge {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   onAuthEvent: (cb: (event: { type: string; message: string; email?: string }) => void) => () => void;
-  getConfig: () => Promise<{ configured: boolean }>;
-  saveConfig: (clientId: string, clientSecret: string) => Promise<{ ok: boolean }>;
 }
+
+interface SeroPluginConfigBridge {
+  read: (pluginId: string) => Promise<Record<string, unknown> | null>;
+  write: (pluginId: string, config: Record<string, unknown>) => Promise<{ ok: boolean }>;
+}
+
+const PLUGIN_ID = 'sero-google-plugin';
 
 function getSeroGoogle(): SeroGoogleBridge | null {
   return (window as any).sero?.google ?? null;
+}
+
+function getPluginConfig(): SeroPluginConfigBridge | null {
+  return (window as any).sero?.pluginConfig ?? null;
 }
 
 // ── Auth types ───────────────────────────────────────────────
@@ -121,9 +130,9 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
   }, [updateState]);
 
   const saveConfig = useCallback(async (clientId: string, clientSecret: string): Promise<boolean> => {
-    const api = getSeroGoogle();
-    if (!api) return false;
-    const result = await api.saveConfig(clientId, clientSecret);
+    const cfg = getPluginConfig();
+    if (!cfg) return false;
+    const result = await cfg.write(PLUGIN_ID, { clientId, clientSecret });
     if (result.ok) {
       await checkAuth();
     }
