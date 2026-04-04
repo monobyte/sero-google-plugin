@@ -1,11 +1,17 @@
 /**
  * AuthSetup — Google sign-in UI.
  *
- * Just a "Sign in with Google" button. Google's own account
- * chooser handles email selection in the browser.
+ * States:
+ * - not-configured: Setup form for entering OAuth client credentials
+ * - signed-out: "Sign in with Google" button
+ * - signing-in: Spinner while OAuth flow is in progress
+ * - authenticated: Green banner with email and sign-out
+ * - expired: Amber banner with re-sign-in prompt
+ * - checking/unknown: Loading/error states
  */
 
-import { CheckCircle2, Loader2, LogIn, LogOut, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, Loader2, LogIn, LogOut, AlertTriangle, Eye, EyeOff, Settings } from 'lucide-react';
 import type { AuthInfo, GoogleApi } from '../hooks/useGoogleApi';
 
 interface AuthSetupProps {
@@ -31,6 +37,41 @@ export function AuthSetup({ auth, google }: AuthSetupProps) {
     );
   }
 
+  // Expired — amber banner with re-sign-in
+  if (auth.status === 'expired') {
+    return (
+      <div className="mx-2 mt-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.03] px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+          <div className="flex-1">
+            {auth.email && (
+              <p className="text-[11px] text-[var(--text-secondary)]">{auth.email}</p>
+            )}
+            <p className="text-[12px] font-medium text-[var(--text-primary)]">
+              Session expired — sign in again to reconnect
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => google.signIn()}
+              className="flex items-center gap-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+            >
+              <LogIn className="size-3" />
+              Sign in
+            </button>
+            <button
+              onClick={google.signOut}
+              className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <LogOut className="size-2.5" />
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Signing in — spinner
   if (auth.status === 'signing-in') {
     return (
@@ -44,23 +85,9 @@ export function AuthSetup({ auth, google }: AuthSetupProps) {
     );
   }
 
-  // Not configured
+  // Not configured — setup form
   if (auth.status === 'not-configured') {
-    return (
-      <div className="mx-2 mt-2 rounded-lg border border-yellow-500/20 bg-yellow-500/[0.03] px-3 py-3">
-        <div className="flex items-start gap-2.5">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-yellow-500" />
-          <div>
-            <p className="text-[12px] font-medium text-[var(--text-primary)]">Google OAuth not configured</p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Set <code className="rounded bg-[var(--bg-base)] px-1 text-[10px]">GOOGLE_CLIENT_ID</code> and{' '}
-              <code className="rounded bg-[var(--bg-base)] px-1 text-[10px]">GOOGLE_CLIENT_SECRET</code> in{' '}
-              <code className="rounded bg-[var(--bg-base)] px-1 text-[10px]">~/.sero-ui/agent/.env</code>
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <ConfigSetupForm google={google} />;
   }
 
   // Checking
@@ -94,6 +121,116 @@ export function AuthSetup({ auth, google }: AuthSetupProps) {
     </div>
   );
 }
+
+// ── Setup Form ──────────────────────────────────────────────
+
+function ConfigSetupForm({ google }: { google: GoogleApi }) {
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [showId, setShowId] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSave = clientId.trim().length > 0 && clientSecret.trim().length > 0 && !saving;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    const ok = await google.saveConfig(clientId.trim(), clientSecret.trim());
+    if (!ok) {
+      setError('Failed to save credentials. Check file permissions.');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="mx-2 mt-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 px-3 py-3">
+      <div className="flex items-start gap-2.5">
+        <Settings className="mt-0.5 size-4 shrink-0 text-[var(--text-muted)]" />
+        <div className="flex-1 space-y-2.5">
+          <div>
+            <p className="text-[12px] font-medium text-[var(--text-primary)]">Set up Google integration</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Create OAuth credentials in{' '}
+              <span className="font-medium text-[var(--text-secondary)]">Google Cloud Console</span>.
+              Enable the Gmail API and Google Calendar API, then create an{' '}
+              <span className="font-medium text-[var(--text-secondary)]">OAuth 2.0 Client ID</span>{' '}
+              (Desktop app type).
+            </p>
+          </div>
+
+          {/* Client ID */}
+          <div>
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              Client ID
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type={showId ? 'text' : 'password'}
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                placeholder="123456789.apps.googleusercontent.com"
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/40 focus:border-blue-500/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowId(!showId)}
+                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
+              >
+                {showId ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Client Secret */}
+          <div>
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              Client Secret
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type={showSecret ? 'text' : 'password'}
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder="GOCSPX-…"
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/40 focus:border-blue-500/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret(!showSecret)}
+                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
+              >
+                {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && <p className="text-[11px] text-red-400">{error}</p>}
+
+          {/* Actions */}
+          <div className="flex justify-end pt-0.5">
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)] disabled:opacity-40 disabled:pointer-events-none"
+            >
+              {saving ? <Loader2 className="size-3 animate-spin" /> : null}
+              Save & Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Google Logo ─────────────────────────────────────────────
 
 function GoogleLogo() {
   return (
