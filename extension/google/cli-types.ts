@@ -28,10 +28,17 @@ export interface GoogleCliContainerManager {
   ): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
 
+export type GoogleCliAccessMode = 'agent' | 'operator';
+
+export interface GoogleCliExecutionOptions {
+  access?: GoogleCliAccessMode;
+}
+
 export interface GoogleCliContext {
   workspaceId: string;
   workspaceManager: GoogleCliWorkspaceManager;
   containerManager: GoogleCliContainerManager;
+  access?: GoogleCliAccessMode;
 }
 
 export interface GoogleCliBridgeDefinition {

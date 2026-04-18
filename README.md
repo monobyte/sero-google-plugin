@@ -47,6 +47,22 @@ The plugin probes these locations automatically:
 - `~/.local/bin/gog`
 - `~/go/bin/gog`
 
+For container-backed Sero workspaces, the Google CLI first tries the workspace
+container for parity. If `gog` is not installed in the shipped container image,
+it falls back to host execution automatically, so `sero google gmail ...` and
+`sero google calendar ...` still work as long as gogcli is installed on the
+host.
+
+Manual smoke after authenticating in the Google UI:
+
+```bash
+sero google gmail search 'newer_than:1d'
+sero google calendar events primary --today
+```
+
+Those commands should keep working in both host-mode and container-backed
+workspaces without requiring an explicit `--account` flag.
+
 ### Google OAuth
 
 Google OAuth credentials must be configured for gogcli to authenticate:
@@ -103,6 +119,12 @@ sero google auth list
 sero google gmail search 'newer_than:1d'
 sero google calendar events primary --today
 ```
+
+Auth-management commands stay operator-facing: use the Google app UI or run
+`sero google auth ...` in a terminal when you need to inspect keyring state,
+import credentials, or recover OAuth manually. Agent-facing Google command
+flows keep Gmail and Calendar parity, but do not expose low-level auth/keyring
+operations.
 
 ## State File
 

@@ -33,14 +33,34 @@ describe('Google CLI handlers', () => {
     expect(GOOGLE_CLI_HELP).toContain('sero google calendar events primary --today');
   });
 
-  it('forwards auth list flags and account selection to the gog runtime', async () => {
-    await handleGoogleCliCommand(['auth', 'list', '--check', '--account', 'work']);
+  it('keeps auth management commands available for operator CLI usage', async () => {
+    await handleGoogleCliCommand(['auth', 'list', '--check', '--account', 'work'], undefined, {
+      access: 'operator',
+    });
 
     expect(mocks.runGoogleCliGog).toHaveBeenCalledWith(
       ['auth', 'list', '--check'],
       undefined,
       { account: 'work' },
     );
+  });
+
+  it('blocks agent-facing auth management commands before gog/keyring internals are touched', async () => {
+    const result = await handleGoogleCliCommand(['auth', 'list'], undefined, {
+      access: 'agent',
+    });
+
+    expect(mocks.runGoogleCliGog).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      output: 'ERROR: Google auth management commands are operator-only. Use the Google app sign-in UI or ask the user to run "sero google auth ..." in a terminal.',
+      exitCode: 1,
+      details: {
+        blocked: true,
+        operatorOnly: true,
+        service: 'auth',
+      },
+    });
+    expect(result.output).not.toContain('keyring');
   });
 
   it('forwards gmail search queries through the parity handler with json output', async () => {

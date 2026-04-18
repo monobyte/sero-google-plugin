@@ -31,14 +31,41 @@ describe('Google CLI tool definition', () => {
         workspaceId: 'ws-1',
         workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
         containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
-      },
+        invocation: { source: 'terminal' },
+      } as never,
     );
 
     expect(mocks.handleGoogleCliCommand).toHaveBeenCalledWith(
       ['auth', 'list'],
-      expect.objectContaining({ workspaceId: 'ws-1' }),
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        access: 'operator',
+      }),
     );
     expect(cliResult).toEqual({ output: '{"ok":true}', exitCode: 0 });
+  });
+
+  it('marks bridged CLI invocations from the agent as agent-facing access', async () => {
+    mocks.handleGoogleCliCommand.mockResolvedValue({ output: 'blocked', exitCode: 1 });
+    const tool = createGoogleCliTool();
+
+    await tool.cli.execute(
+      ['auth', 'list'],
+      {
+        workspaceId: 'ws-1',
+        workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
+        containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
+        invocation: { source: 'tool' },
+      } as never,
+    );
+
+    expect(mocks.handleGoogleCliCommand).toHaveBeenCalledWith(
+      ['auth', 'list'],
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        access: 'agent',
+      }),
+    );
   });
 
   it('supports structured non-CLI execution for plain Pi tool usage', async () => {
@@ -59,6 +86,8 @@ describe('Google CLI tool definition', () => {
 
     expect(mocks.handleGoogleCliCommand).toHaveBeenCalledWith(
       ['gmail', 'search', 'newer_than:1d', '--max', '5'],
+      undefined,
+      { access: 'agent' },
     );
     expect(result).toEqual({
       content: [{ type: 'text', text: 'search ok' }],

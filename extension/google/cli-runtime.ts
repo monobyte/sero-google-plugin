@@ -44,13 +44,40 @@ function buildCommand(args: string[]): string {
   return args.map(shQuote).join(' ');
 }
 
+function isMissingGogBinaryResult(result: GogResult): boolean {
+  if (result.exitCode === 127) return true;
+
+  const combined = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return combined.includes('gog binary not found')
+    || combined.includes('gog: not found')
+    || combined.includes('command not found')
+    || combined.includes('executable file not found');
+}
+
+async function resolveDefaultAccount(opts?: GogOpts): Promise<string | undefined> {
+  if (opts?.account) return opts.account;
+
+  const auth = getGoogleAuthManager();
+  const warmedEmail = auth.getEmail();
+  if (warmedEmail) return warmedEmail;
+
+  const status = await auth.getStatus();
+  return status.authenticated ? status.email : undefined;
+}
+
+function shouldResolveDefaultAccount(gogArgs: string[]): boolean {
+  return gogArgs[0] !== 'auth';
+}
+
 async function runGogLocal(gogArgs: string[], opts?: GogOpts): Promise<GogResult> {
   const auth = getGoogleAuthManager();
+  const account = shouldResolveDefaultAccount(gogArgs)
+    ? await resolveDefaultAccount(opts)
+    : opts?.account;
   await auth.ensureCredentialsAvailable();
 
   return new Promise((resolve) => {
     const fullArgs: string[] = [];
-    const account = opts?.account ?? auth.getEmail() ?? undefined;
     fullArgs.push('--client', getGoogleClientName());
     if (account) fullArgs.push('--account', account);
     if (opts?.json) fullArgs.push('--json');
@@ -111,7 +138,10 @@ export async function runGoogleCliGog(
     ? await context.workspaceManager.isContainerEnabled(context.workspaceId)
     : false;
   if (context && useContainer && context.containerManager.hasContainer(context.workspaceId)) {
-    return runGogContainer(gogArgs, context, opts);
+    const containerResult = await runGogContainer(gogArgs, context, opts);
+    if (!isMissingGogBinaryResult(containerResult)) {
+      return containerResult;
+    }
   }
   return runGogLocal(gogArgs, opts);
 }

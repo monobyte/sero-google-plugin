@@ -1,10 +1,15 @@
+import { guardGoogleCliService } from './cli-access';
 import { extractAccount, fail } from './cli-helpers';
 import {
   GOG_AUTH_TIMEOUT_MS,
   gogResultToCliResult,
   runGoogleCliGog,
 } from './cli-runtime';
-import type { GoogleCliContext, GoogleCliResult } from './cli-types';
+import type {
+  GoogleCliContext,
+  GoogleCliExecutionOptions,
+  GoogleCliResult,
+} from './cli-types';
 
 export const GOOGLE_CLI_SUMMARY = 'Google Workspace commands — Gmail, Calendar, auth (via gogcli)';
 export const GOOGLE_CLI_HELP =
@@ -419,6 +424,7 @@ async function handleGoogleCalendar(args: string[], context?: GoogleCliContext):
 export async function handleGoogleCliCommand(
   args: string[],
   context?: GoogleCliContext,
+  options?: GoogleCliExecutionOptions,
 ): Promise<GoogleCliResult> {
   const [service, ...rest] = args;
   if (!service) {
@@ -435,6 +441,13 @@ export async function handleGoogleCliCommand(
       '  sero google gmail search \'newer_than:1d\'\n' +
       '  sero google calendar events primary --today',
     );
+  }
+
+  const blockedService = guardGoogleCliService(service, {
+    access: options?.access ?? context?.access,
+  });
+  if (blockedService) {
+    return blockedService;
   }
 
   switch (service) {

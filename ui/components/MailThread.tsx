@@ -5,10 +5,11 @@
  * Falls back to plain text when no HTML body is available.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { GmailMessage } from '../../shared/types';
 import { formatRelativeDate, extractName } from './format-utils';
+import { sanitizeEmailHtml } from './mail-html';
 
 interface MailThreadProps {
   messages: GmailMessage[];
@@ -196,6 +197,7 @@ const EMAIL_STYLES = `
 function HtmlBody({ html, fill = false }: { html: string; fill?: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(200);
+  const sanitizedHtml = useMemo(() => sanitizeEmailHtml(html), [html]);
 
   const writeContent = useCallback((iframe: HTMLIFrameElement) => {
     const doc = iframe.contentDocument;
@@ -205,7 +207,7 @@ function HtmlBody({ html, fill = false }: { html: string; fill?: boolean }) {
     doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${EMAIL_STYLES} body { ${overflow} }</style>
-</head><body>${html}</body></html>`);
+</head><body>${sanitizedHtml}</body></html>`);
     doc.close();
 
     if (!fill) {
@@ -223,7 +225,7 @@ function HtmlBody({ html, fill = false }: { html: string; fill?: boolean }) {
       });
       resize();
     }
-  }, [html, fill]);
+  }, [fill, sanitizedHtml]);
 
   useEffect(() => {
     const iframe = iframeRef.current;

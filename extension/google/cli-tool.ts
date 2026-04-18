@@ -10,6 +10,7 @@ import {
   handleGoogleCliCommand,
 } from './cli-handlers';
 import type {
+  GoogleCliAccessMode,
   GoogleCliContext,
   GoogleCliToolDefinition,
 } from './cli-types';
@@ -28,10 +29,23 @@ function buildStructuredArgs(params: GoogleToolParamsValue): string[] {
   return [params.service, params.action, ...(params.args ?? [])];
 }
 
+interface GoogleCliContextCandidate extends Partial<GoogleCliContext> {
+  invocation?: { source?: string };
+  agentContext?: unknown;
+  sessionRuntime?: unknown;
+}
+
+function resolveCliAccess(candidate: GoogleCliContextCandidate): GoogleCliAccessMode {
+  if (candidate.invocation?.source === 'tool' || candidate.agentContext || candidate.sessionRuntime) {
+    return 'agent';
+  }
+  return 'operator';
+}
+
 function toCliContext(context: unknown): GoogleCliContext | undefined {
   if (!context || typeof context !== 'object') return undefined;
 
-  const candidate = context as Partial<GoogleCliContext>;
+  const candidate = context as GoogleCliContextCandidate;
   if (
     typeof candidate.workspaceId !== 'string' ||
     !candidate.workspaceManager ||
@@ -44,6 +58,7 @@ function toCliContext(context: unknown): GoogleCliContext | undefined {
     workspaceId: candidate.workspaceId,
     workspaceManager: candidate.workspaceManager,
     containerManager: candidate.containerManager,
+    access: resolveCliAccess(candidate),
   };
 }
 
@@ -62,7 +77,9 @@ export function createGoogleCliTool(): GoogleCliToolDefinition {
 
     async execute(_toolCallId, params) {
       const parsed = params as GoogleToolParamsValue;
-      const result = await handleGoogleCliCommand(buildStructuredArgs(parsed));
+      const result = await handleGoogleCliCommand(buildStructuredArgs(parsed), undefined, {
+        access: 'agent',
+      });
       return result.exitCode === 0
         ? textToolResult(
             result.output,
