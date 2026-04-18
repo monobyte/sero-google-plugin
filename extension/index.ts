@@ -6,8 +6,6 @@
  * can display them instantly via file watching.
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { StringEnum } from '@mariozechner/pi-ai';
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Text } from '@mariozechner/pi-tui';
@@ -19,44 +17,10 @@ import {
   applyGmailSearchResult,
   applyGmailThreadResult,
 } from '../shared/google-state';
-import type { GoogleAppState } from '../shared/types';
-import { DEFAULT_GOOGLE_STATE } from '../shared/types';
+import { readState, resolveStatePath, writeState } from './app-state';
 import { runGog } from './gogcli';
-
-// ── State I/O ────────────────────────────────────────────────
-
-function resolveStatePath(cwd: string): string {
-  const seroHome = process.env.SERO_HOME;
-  if (seroHome) {
-    return path.join(seroHome, 'apps', 'google', 'state.json');
-  }
-  return path.join(cwd, '.sero', 'apps', 'google', 'state.json');
-}
-
-async function readState(filePath: string): Promise<GoogleAppState> {
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(raw) as GoogleAppState;
-  } catch {
-    return { ...DEFAULT_GOOGLE_STATE };
-  }
-}
-
-async function writeState(filePath: string, state: GoogleAppState): Promise<void> {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  const tmpPath = `${filePath}.tmp.${Date.now()}`;
-  await fs.writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf8');
-  await fs.rename(tmpPath, filePath);
-}
-
-function parseJsonResponse(stdout: string): unknown | null {
-  try {
-    return JSON.parse(stdout) as unknown;
-  } catch {
-    return null;
-  }
-}
+import { registerGoogleAuthTool } from './google/auth-tool';
+import { errorToolResult, textToolResult } from './tool-results';
 
 // ── Tool parameters ──────────────────────────────────────────
 
@@ -74,17 +38,26 @@ const GmailParams = Type.Object({
 
 const CalendarParams = Type.Object({
   action: StringEnum([
-    'today', 'week', 'search', 'create', 'delete', 'calendars',
+    'today', 'week', 'range', 'search', 'create', 'delete', 'calendars',
   ] as const),
   query: Type.Optional(Type.String({ description: 'Search query (for search)' })),
   calendar_id: Type.Optional(Type.String({ description: 'Calendar ID (default: primary)' })),
   event_id: Type.Optional(Type.String({ description: 'Event ID (for delete)' })),
   summary: Type.Optional(Type.String({ description: 'Event title (for create)' })),
-  from: Type.Optional(Type.String({ description: 'Start time ISO or natural (for create)' })),
-  to: Type.Optional(Type.String({ description: 'End time ISO or natural (for create)' })),
+  from: Type.Optional(Type.String({ description: 'Start time ISO or natural (for create or range)' })),
+  to: Type.Optional(Type.String({ description: 'End time ISO or natural (for create or range)' })),
   location: Type.Optional(Type.String({ description: 'Event location (for create)' })),
   attendees: Type.Optional(Type.String({ description: 'Comma-separated emails (for create)' })),
+  max: Type.Optional(Type.Number({ description: 'Max results (for range, default 50)' })),
 });
+
+function parseJsonResponse(stdout: string): unknown | null {
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 // ── Extension entry point ────────────────────────────────────
 
@@ -98,6 +71,8 @@ export default function (pi: ExtensionAPI) {
     statePath = resolveStatePath(ctx.cwd);
   });
 
+  registerGoogleAuthTool(pi, () => statePath);
+
   // ── Gmail tool ─────────────────────────────────────────────
 
   pi.registerTool({
@@ -110,7 +85,7 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const resolved = ctx ? resolveStatePath(ctx.cwd) : statePath;
-      if (!resolved) return { content: [{ type: 'text', text: 'Error: no workspace' }], details: {} };
+      if (!resolved) return errorToolResult('no workspace');
       statePath = resolved;
 
       const state = await readState(statePath);
@@ -124,57 +99,64 @@ export default function (pi: ExtensionAPI) {
             { json: true },
           );
           if (result.exitCode !== 0) {
-            return { content: [{ type: 'text', text: result.stderr || 'Search failed' }], details: {} };
+            return errorToolResult(result.stderr || 'Search failed');
           }
 
           const data = parseJsonResponse(result.stdout);
           if (data) {
             await writeState(statePath, applyGmailSearchResult(state, data, q));
           }
-          return { content: [{ type: 'text', text: result.stdout }], details: {} };
+          return textToolResult(result.stdout);
         }
 
         case 'read_thread': {
-          if (!params.thread_id) return { content: [{ type: 'text', text: 'Error: thread_id required' }], details: {} };
+          if (!params.thread_id) return errorToolResult('thread_id required');
           const result = await runGog(['gmail', 'thread', 'get', params.thread_id], { json: true });
           if (result.exitCode !== 0) {
-            return { content: [{ type: 'text', text: result.stderr || 'Failed to read thread' }], details: {} };
+            return errorToolResult(result.stderr || 'Failed to read thread');
           }
 
           const data = parseJsonResponse(result.stdout);
           if (data) {
             await writeState(statePath, applyGmailThreadResult(state, data, params.thread_id));
           }
-          return { content: [{ type: 'text', text: result.stdout }], details: {} };
+          return textToolResult(result.stdout);
         }
 
         case 'send': {
-          if (!params.to) return { content: [{ type: 'text', text: 'Error: to required' }], details: {} };
+          if (!params.to) return errorToolResult('to required');
           const args = ['gmail', 'send', '--to', params.to];
           if (params.subject) args.push('--subject', params.subject);
           if (params.body) args.push('--body', params.body);
           const result = await runGog(args, { json: true });
-          const text = result.exitCode === 0 ? 'Email sent successfully' : (result.stderr || 'Send failed');
-          return { content: [{ type: 'text', text }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Send failed');
+          }
+          return textToolResult('Email sent successfully');
         }
 
         case 'archive': {
-          if (!params.thread_id) return { content: [{ type: 'text', text: 'Error: thread_id required' }], details: {} };
+          if (!params.thread_id) return errorToolResult('thread_id required');
           const result = await runGog(
             ['gmail', 'labels', 'modify', params.thread_id, '--remove', 'INBOX'],
             { json: true },
           );
-          const text = result.exitCode === 0 ? `Archived thread ${params.thread_id}` : (result.stderr || 'Archive failed');
-          return { content: [{ type: 'text', text }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Archive failed');
+          }
+          return textToolResult(`Archived thread ${params.thread_id}`);
         }
 
         case 'labels': {
           const result = await runGog(['gmail', 'labels', 'list'], { json: true });
-          return { content: [{ type: 'text', text: result.stdout || result.stderr }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Failed to list labels');
+          }
+          return textToolResult(result.stdout);
         }
 
         default:
-          return { content: [{ type: 'text', text: `Unknown gmail action: ${params.action}` }], details: {} };
+          return errorToolResult(`Unknown gmail action: ${params.action}`);
       }
     },
 
@@ -191,7 +173,7 @@ export default function (pi: ExtensionAPI) {
       const msg = first?.type === 'text' ? first.text : '';
       const short = msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
       return new Text(
-        msg.startsWith('Error') ? theme.fg('error', short) : theme.fg('success', '✓ ') + theme.fg('muted', short),
+        msg.startsWith('Error:') ? theme.fg('error', short) : theme.fg('success', '✓ ') + theme.fg('muted', short),
         0, 0,
       );
     },
@@ -204,12 +186,12 @@ export default function (pi: ExtensionAPI) {
     label: 'Google Calendar',
     description:
       'Access Google Calendar. Actions: today (today\'s events), week (this week), ' +
-      'search (find events), create (new event), delete (remove event), calendars (list).',
+      'range (events for a date range), search (find events), create (new event), delete (remove event), calendars (list).',
     parameters: CalendarParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const resolved = ctx ? resolveStatePath(ctx.cwd) : statePath;
-      if (!resolved) return { content: [{ type: 'text', text: 'Error: no workspace' }], details: {} };
+      if (!resolved) return errorToolResult('no workspace');
       statePath = resolved;
 
       const state = await readState(statePath);
@@ -221,7 +203,7 @@ export default function (pi: ExtensionAPI) {
           const flag = params.action === 'today' ? '--today' : '--week';
           const result = await runGog(['calendar', 'events', calId, flag], { json: true });
           if (result.exitCode !== 0) {
-            return { content: [{ type: 'text', text: result.stderr || 'Failed to fetch events' }], details: {} };
+            return errorToolResult(result.stderr || 'Failed to fetch events');
           }
 
           const data = parseJsonResponse(result.stdout);
@@ -231,45 +213,78 @@ export default function (pi: ExtensionAPI) {
               view: params.action,
             }));
           }
-          return { content: [{ type: 'text', text: result.stdout }], details: {} };
+          return textToolResult(result.stdout);
+        }
+
+        case 'range': {
+          if (!params.from || !params.to) {
+            return errorToolResult('from and to are required');
+          }
+          const max = params.max || 50;
+          const result = await runGog(
+            ['calendar', 'events', calId, '--from', params.from, '--to', params.to, '--max', String(max)],
+            { json: true },
+          );
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Failed to fetch events');
+          }
+
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyCalendarEventsResult(state, data, {
+              calendarId: calId,
+            }));
+          }
+          return textToolResult(result.stdout);
         }
 
         case 'search': {
-          if (!params.query) return { content: [{ type: 'text', text: 'Error: query required' }], details: {} };
+          if (!params.query) return errorToolResult('query required');
           const result = await runGog(['calendar', 'search', params.query], { json: true });
-          return { content: [{ type: 'text', text: result.stdout || result.stderr }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Search failed');
+          }
+          return textToolResult(result.stdout);
         }
 
         case 'create': {
           if (!params.summary || !params.from || !params.to) {
-            return { content: [{ type: 'text', text: 'Error: summary, from, to required' }], details: {} };
+            return errorToolResult('summary, from, to required');
           }
           const args = ['calendar', 'create', calId, '--summary', params.summary, '--from', params.from, '--to', params.to];
           if (params.location) args.push('--location', params.location);
           if (params.attendees) args.push('--attendees', params.attendees);
           const result = await runGog(args, { json: true });
-          const text = result.exitCode === 0 ? `Created: ${params.summary}` : (result.stderr || 'Create failed');
-          return { content: [{ type: 'text', text }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Create failed');
+          }
+          return textToolResult(`Created: ${params.summary}`);
         }
 
         case 'delete': {
-          if (!params.event_id) return { content: [{ type: 'text', text: 'Error: event_id required' }], details: {} };
+          if (!params.event_id) return errorToolResult('event_id required');
           const result = await runGog(['calendar', 'delete', calId, params.event_id], { json: false });
-          const text = result.exitCode === 0 ? `Deleted event ${params.event_id}` : (result.stderr || 'Delete failed');
-          return { content: [{ type: 'text', text }], details: {} };
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Delete failed');
+          }
+          return textToolResult(`Deleted event ${params.event_id}`);
         }
 
         case 'calendars': {
           const result = await runGog(['calendar', 'calendars'], { json: true });
+          if (result.exitCode !== 0) {
+            return errorToolResult(result.stderr || 'Failed to fetch calendars');
+          }
+
           const data = parseJsonResponse(result.stdout);
           if (data) {
             await writeState(statePath, applyCalendarCalendarsResult(state, data));
           }
-          return { content: [{ type: 'text', text: result.stdout || result.stderr }], details: {} };
+          return textToolResult(result.stdout);
         }
 
         default:
-          return { content: [{ type: 'text', text: `Unknown calendar action: ${params.action}` }], details: {} };
+          return errorToolResult(`Unknown calendar action: ${params.action}`);
       }
     },
 
@@ -286,7 +301,7 @@ export default function (pi: ExtensionAPI) {
       const msg = first?.type === 'text' ? first.text : '';
       const short = msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
       return new Text(
-        msg.startsWith('Error') ? theme.fg('error', short) : theme.fg('success', '✓ ') + theme.fg('muted', short),
+        msg.startsWith('Error:') ? theme.fg('error', short) : theme.fg('success', '✓ ') + theme.fg('muted', short),
         0, 0,
       );
     },

@@ -82,6 +82,7 @@ keyring.
 | `today` | Today's events | — |
 | `week` | This week's events | — |
 | `search` | Search calendar events | `query` |
+| `range` | Fetch events for a date range | `from`, `to` |
 | `create` | Create a new event | `summary`, `from`, `to` |
 | `delete` | Delete an event | `event_id` |
 | `calendars` | List available calendars | — |
@@ -89,9 +90,9 @@ keyring.
 ## Sero Usage
 
 When loaded in Sero, the web UI mounts in the main app area with a tabbed
-layout for **Mail** and **Calendar**. The UI connects to gogcli via the
-`window.sero.google` IPC bridge for direct data fetching and watches the
-state file for real-time updates from the agent.
+layout for **Mail** and **Calendar**. The UI invokes plugin-owned tools via
+Sero's generic app-tool bridge and watches the state file for real-time
+updates from the agent and the app itself.
 
 ## State File
 
