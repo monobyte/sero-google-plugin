@@ -20,6 +20,7 @@ import {
 import { readState, resolveStatePath, writeState } from './app-state';
 import { runGog } from './gogcli';
 import { registerGoogleAuthTool } from './google/auth-tool';
+import { registerGoogleCliTool } from './google/cli-tool';
 import { errorToolResult, textToolResult } from './tool-results';
 
 // ── Tool parameters ──────────────────────────────────────────
@@ -72,6 +73,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerGoogleAuthTool(pi, () => statePath);
+  registerGoogleCliTool(pi);
 
   // ── Gmail tool ─────────────────────────────────────────────
 

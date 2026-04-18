@@ -22,10 +22,12 @@ Install as a Pi package:
 pi install git:https://github.com/monobyte/sero-google-plugin.git
 ```
 
-The agent gains two tools — `gmail` and `gcal` — plus `/gmail` and `/gcal`
-slash commands. State is stored in `.sero/apps/google/state.json` relative to
-the workspace root (or `$SERO_HOME/apps/google/state.json` when running inside
-Sero).
+The agent gains three tools — `google`, `gmail`, and `gcal` — plus `/gmail`
+and `/gcal` slash commands. Inside Sero, the `google` tool is bridged into the
+public `sero google ...` CLI contract so existing auth, Gmail, and Calendar
+commands keep working while the plugin owns the behavior. State is stored in
+`.sero/apps/google/state.json` relative to the workspace root (or
+`$SERO_HOME/apps/google/state.json` when running inside Sero).
 
 ## Prerequisites
 
@@ -93,6 +95,14 @@ When loaded in Sero, the web UI mounts in the main app area with a tabbed
 layout for **Mail** and **Calendar**. The UI invokes plugin-owned tools via
 Sero's generic app-tool bridge and watches the state file for real-time
 updates from the agent and the app itself.
+
+The plugin also preserves the public Google CLI surface in Sero:
+
+```bash
+sero google auth list
+sero google gmail search 'newer_than:1d'
+sero google calendar events primary --today
+```
 
 ## State File
 
