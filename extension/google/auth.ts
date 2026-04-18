@@ -129,12 +129,11 @@ export class GoogleAuthManager {
       code_challenge_method: 'S256',
     });
 
-    onProgress({ type: 'browser', message: 'Opening Google sign-in…' });
-    await Promise.resolve(this.openExternal(`${AUTH_URL}?${params}`));
-    onProgress({ type: 'waiting', message: 'Waiting for authorization…' });
-
     let code: string;
     try {
+      onProgress({ type: 'browser', message: 'Opening Google sign-in…' });
+      await Promise.resolve(this.openExternal(`${AUTH_URL}?${params}`));
+      onProgress({ type: 'waiting', message: 'Waiting for authorization…' });
       code = await getCode;
     } finally {
       server.close();

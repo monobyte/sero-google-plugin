@@ -114,6 +114,26 @@ describe('GoogleAuthManager', () => {
     expect(manager.getEmail()).toBe('user@example.com');
   });
 
+  it('closes the loopback server if opening the browser fails', async () => {
+    const server = { close: vi.fn() };
+    mocks.startOAuthLoopbackServer.mockResolvedValue({
+      port: 4815,
+      getCode: new Promise<string>(() => undefined),
+      server,
+    });
+
+    const manager = new GoogleAuthManager({
+      openExternal: async () => {
+        throw new Error('browser launch failed');
+      },
+    });
+
+    await expect(manager.login(() => undefined)).rejects.toThrow('browser launch failed');
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(mocks.exchangeCodeForTokens).not.toHaveBeenCalled();
+    expect(mocks.importRefreshToken).not.toHaveBeenCalled();
+  });
+
   it('migrates legacy buggy-password tokens before reporting authenticated status', async () => {
     mocks.findAccessibleEmail
       .mockResolvedValueOnce(null)

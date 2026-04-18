@@ -43,12 +43,15 @@ async function openExternal(url: string): Promise<void> {
 
 async function writeGooglePluginConfig(clientId: string, clientSecret: string): Promise<void> {
   const configPath = getGooglePluginConfigPath();
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  const configDir = path.dirname(configPath);
+  await fs.mkdir(configDir, { recursive: true, mode: 0o700 });
+  await fs.chmod(configDir, 0o700);
   await fs.writeFile(
     configPath,
-    JSON.stringify({ clientId, clientSecret }, null, 2),
+    JSON.stringify({ clientId, clientSecret }, null, 2) + '\n',
     'utf8',
   );
+  await fs.chmod(configPath, 0o600);
 }
 
 function authDetails(status: GoogleAuthStatus): Record<string, unknown> {
