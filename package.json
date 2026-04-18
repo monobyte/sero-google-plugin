@@ -74,6 +74,10 @@
         "workspace"
       ],
       "minSeroVersion": "0.1.0",
+      "requiredHostCapabilities": [
+        "appAgent.invokeTool",
+        "tool.cli"
+      ],
       "preBuilt": false,
       "bridgeTools": [
         "google",

@@ -39,6 +39,10 @@ git:https://github.com/monobyte/sero-google-plugin.git
 Sero will clone the repo, install dependencies, build it, and add **Google** to
 your sidebar.
 
+If you try to install this plugin on an older Sero build that does not provide
+the generic app-tool bridge or plugin-owned CLI bridging, Sero should now block
+the install cleanly instead of letting the plugin fail later at runtime.
+
 ## Set up Google access
 
 ### Step 1: Create Google OAuth credentials
