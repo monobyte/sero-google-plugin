@@ -3,7 +3,7 @@
  *
  * Tabbed layout switching between MailView and CalendarView.
  * Includes auth setup flow for first-time Google account connection.
- * Uses gogcli via the window.sero.google IPC bridge for direct
+ * Uses plugin-owned tools via the generic app-tool bridge for auth and
  * data fetching, and useAppState for persistent cached state.
  */
 
