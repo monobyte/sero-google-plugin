@@ -73,11 +73,31 @@ describe('Google CLI handlers', () => {
     );
   });
 
+  it('forwards gmail label listing through the parity handler with json output', async () => {
+    await handleGoogleCliCommand(['gmail', 'labels', 'list']);
+
+    expect(mocks.runGoogleCliGog).toHaveBeenCalledWith(
+      ['gmail', 'labels', 'list'],
+      undefined,
+      { json: true, account: undefined },
+    );
+  });
+
   it('forwards calendar event listing flags through the parity handler with json output', async () => {
     await handleGoogleCliCommand(['calendar', 'events', 'primary', '--today']);
 
     expect(mocks.runGoogleCliGog).toHaveBeenCalledWith(
       ['calendar', 'events', 'primary', '--today'],
+      undefined,
+      { json: true, account: undefined },
+    );
+  });
+
+  it('forwards calendar freebusy checks through the parity handler with json output', async () => {
+    await handleGoogleCliCommand(['calendar', 'freebusy', '--from', '9:00', '--to', '17:00']);
+
+    expect(mocks.runGoogleCliGog).toHaveBeenCalledWith(
+      ['calendar', 'freebusy', '--from', '9:00', '--to', '17:00'],
       undefined,
       { json: true, account: undefined },
     );

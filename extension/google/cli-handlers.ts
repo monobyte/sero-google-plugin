@@ -212,12 +212,10 @@ async function handleGoogleGmail(args: string[], context?: GoogleCliContext): Pr
           '       sero google gmail send --reply-to-message-id <id> --body "<b>" [--quote]',
         );
       }
-      return gogResultToCliResult(
-        await runGoogleCliGog(['gmail', 'send', ...cleaned], context, {
-          json: true,
-          account,
-        }),
-      );
+      return executeGoogleCli('gmail', 'send', ['gmail', 'send', ...cleaned], context, {
+        json: true,
+        account,
+      });
     }
 
     case 'labels': {
@@ -226,7 +224,7 @@ async function handleGoogleGmail(args: string[], context?: GoogleCliContext): Pr
 
       switch (labelAction) {
         case 'list':
-          return executeGoogleCli('gmail', 'labels', ['gmail', 'labels', 'list', ...labelRest], context, {
+          return executeGoogleCli('gmail', 'labels:list', ['gmail', 'labels', 'list', ...labelRest], context, {
             json: true,
             account,
           });
@@ -234,20 +232,16 @@ async function handleGoogleGmail(args: string[], context?: GoogleCliContext): Pr
           if (!labelRest[0]) {
             return fail('Usage: sero google gmail labels modify <threadId> --add <label> --remove <label>');
           }
-          return gogResultToCliResult(
-            await runGoogleCliGog(['gmail', 'labels', 'modify', ...labelRest], context, {
-              json: true,
-              account,
-            }),
-          );
+          return executeGoogleCli('gmail', 'labels:modify', ['gmail', 'labels', 'modify', ...labelRest], context, {
+            json: true,
+            account,
+          });
         case 'create':
           if (!labelRest[0]) return fail('Usage: sero google gmail labels create "<name>"');
-          return gogResultToCliResult(
-            await runGoogleCliGog(['gmail', 'labels', 'create', ...labelRest], context, {
-              json: true,
-              account,
-            }),
-          );
+          return executeGoogleCli('gmail', 'labels:create', ['gmail', 'labels', 'create', ...labelRest], context, {
+            json: true,
+            account,
+          });
         case 'delete':
           if (!labelRest[0]) return fail('Usage: sero google gmail labels delete <labelId>');
           return gogResultToCliResult(
@@ -264,26 +258,22 @@ async function handleGoogleGmail(args: string[], context?: GoogleCliContext): Pr
 
       switch (draftAction) {
         case 'list':
-          return executeGoogleCli('gmail', 'drafts', ['gmail', 'drafts', 'list', ...draftRest], context, {
+          return executeGoogleCli('gmail', 'drafts:list', ['gmail', 'drafts', 'list', ...draftRest], context, {
             json: true,
             account,
           });
         case 'create':
-          return gogResultToCliResult(
-            await runGoogleCliGog(['gmail', 'drafts', 'create', ...draftRest], context, {
-              json: true,
-              account,
-            }),
-          );
+          return executeGoogleCli('gmail', 'drafts:create', ['gmail', 'drafts', 'create', ...draftRest], context, {
+            json: true,
+            account,
+          });
         case 'send': {
           const draftId = draftRest[0];
           if (!draftId) return fail('Usage: sero google gmail drafts send <draftId>');
-          return gogResultToCliResult(
-            await runGoogleCliGog(['gmail', 'drafts', 'send', ...draftRest], context, {
-              json: true,
-              account,
-            }),
-          );
+          return executeGoogleCli('gmail', 'drafts:send', ['gmail', 'drafts', 'send', ...draftRest], context, {
+            json: true,
+            account,
+          });
         }
         default:
           return fail(`Unknown drafts action: ${draftAction}. Use: list, create, send`);
@@ -364,12 +354,10 @@ async function handleGoogleCalendar(args: string[], context?: GoogleCliContext):
           'Options: --attendees "<emails>" --location "<loc>" --description "<desc>"',
         );
       }
-      return gogResultToCliResult(
-        await runGoogleCliGog(['calendar', 'create', ...cleaned], context, {
-          json: true,
-          account,
-        }),
-      );
+      return executeGoogleCli('calendar', 'create', ['calendar', 'create', ...cleaned], context, {
+        json: true,
+        account,
+      });
     }
 
     case 'update': {
@@ -378,12 +366,10 @@ async function handleGoogleCalendar(args: string[], context?: GoogleCliContext):
       if (!calendarId || !eventId) {
         return fail('Usage: sero google calendar update <calendarId> <eventId> [flags]');
       }
-      return gogResultToCliResult(
-        await runGoogleCliGog(['calendar', 'update', ...cleaned], context, {
-          json: true,
-          account,
-        }),
-      );
+      return executeGoogleCli('calendar', 'update', ['calendar', 'update', ...cleaned], context, {
+        json: true,
+        account,
+      });
     }
 
     case 'delete': {
@@ -405,18 +391,17 @@ async function handleGoogleCalendar(args: string[], context?: GoogleCliContext):
       if (!calendarId || !eventId) {
         return fail('Usage: sero google calendar respond <calendarId> <eventId> --status accepted|declined|tentative');
       }
-      return gogResultToCliResult(
-        await runGoogleCliGog(['calendar', 'respond', ...cleaned], context, {
-          json: true,
-          account,
-        }),
-      );
+      return executeGoogleCli('calendar', 'respond', ['calendar', 'respond', ...cleaned], context, {
+        json: true,
+        account,
+      });
     }
 
     case 'freebusy':
-      return gogResultToCliResult(
-        await runGoogleCliGog(['calendar', 'freebusy', ...cleaned], context, { json: true, account }),
-      );
+      return executeGoogleCli('calendar', 'freebusy', ['calendar', 'freebusy', ...cleaned], context, {
+        json: true,
+        account,
+      });
 
     case 'conflicts':
       return executeGoogleCli('calendar', 'conflicts', ['calendar', 'conflicts', ...cleaned], context, {
