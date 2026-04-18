@@ -26,6 +26,36 @@ describe('Google CLI handlers', () => {
     mocks.runGoogleCliGog.mockResolvedValue({ stdout: '{"ok":true}', stderr: '', exitCode: 0 });
   });
 
+  it('sends a follow-up assistant message for successful agent-facing CLI results', async () => {
+    const sendMessage = vi.fn(async () => undefined);
+    mocks.runGoogleCliGog.mockResolvedValueOnce({
+      stdout: 'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await handleGoogleCliCommand(
+      ['gmail', 'url', 'thread-1'],
+      {
+        workspaceId: 'ws-1',
+        workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
+        containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
+        access: 'agent',
+        sessionRuntime: { sendMessage },
+      },
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      {
+        customType: '',
+        content: [{ type: 'text', text: 'https://mail.google.com/mail/u/0/#inbox/thread-1' }],
+        display: true,
+        details: undefined,
+      },
+      { triggerTurn: false, deliverAs: 'followUp' },
+    );
+  });
+
   it('reuses the shell-compatible top-level summary/help text', () => {
     expect(GOOGLE_CLI_SUMMARY).toContain('Gmail, Calendar, auth');
     expect(GOOGLE_CLI_HELP).toContain('sero google auth list');
@@ -43,6 +73,23 @@ describe('Google CLI handlers', () => {
       undefined,
       { account: 'work' },
     );
+  });
+
+  it('does not send a follow-up assistant message for operator CLI usage', async () => {
+    const sendMessage = vi.fn(async () => undefined);
+
+    await handleGoogleCliCommand(
+      ['gmail', 'url', 'thread-1'],
+      {
+        workspaceId: 'ws-1',
+        workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
+        containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
+        access: 'operator',
+        sessionRuntime: { sendMessage },
+      },
+    );
+
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('blocks agent-facing auth management commands before gog/keyring internals are touched', async () => {

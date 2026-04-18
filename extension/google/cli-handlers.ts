@@ -1,4 +1,5 @@
 import { guardGoogleCliService } from './cli-access';
+import { emitGoogleCliFollowUp } from './cli-followup';
 import { formatGoogleCliResult } from './cli-output';
 import { extractAccount, fail } from './cli-helpers';
 import {
@@ -443,14 +444,19 @@ export async function handleGoogleCliCommand(
     return blockedService;
   }
 
-  switch (service) {
-    case 'auth':
-      return handleGoogleAuth(rest, context);
-    case 'gmail':
-      return handleGoogleGmail(rest, context);
-    case 'calendar':
-      return handleGoogleCalendar(rest, context);
-    default:
-      return fail(`Unknown Google service: ${service}. Available: auth, gmail, calendar`);
-  }
+  const result = await (async (): Promise<GoogleCliResult> => {
+    switch (service) {
+      case 'auth':
+        return handleGoogleAuth(rest, context);
+      case 'gmail':
+        return handleGoogleGmail(rest, context);
+      case 'calendar':
+        return handleGoogleCalendar(rest, context);
+      default:
+        return fail(`Unknown Google service: ${service}. Available: auth, gmail, calendar`);
+    }
+  })();
+
+  await emitGoogleCliFollowUp(result, context);
+  return result;
 }

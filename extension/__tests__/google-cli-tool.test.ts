@@ -68,6 +68,32 @@ describe('Google CLI tool definition', () => {
     );
   });
 
+  it('forwards sessionRuntime into the bridged CLI context for follow-up messages', async () => {
+    mocks.handleGoogleCliCommand.mockResolvedValue({ output: 'ok', exitCode: 0 });
+    const tool = createGoogleCliTool();
+    const sendMessage = vi.fn(async () => undefined);
+
+    await tool.cli.execute(
+      ['gmail', 'url', 'thread-1'],
+      {
+        workspaceId: 'ws-1',
+        workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
+        containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
+        invocation: { source: 'tool' },
+        sessionRuntime: { sendMessage },
+      } as never,
+    );
+
+    expect(mocks.handleGoogleCliCommand).toHaveBeenCalledWith(
+      ['gmail', 'url', 'thread-1'],
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        access: 'agent',
+        sessionRuntime: { sendMessage },
+      }),
+    );
+  });
+
   it('supports structured non-CLI execution for plain Pi tool usage', async () => {
     mocks.handleGoogleCliCommand.mockResolvedValue({ output: 'search ok', exitCode: 0, details: { count: 1 } });
     const tool = createGoogleCliTool();

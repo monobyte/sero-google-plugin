@@ -12,6 +12,7 @@ import {
 import type {
   GoogleCliAccessMode,
   GoogleCliContext,
+  GoogleCliSessionRuntime,
   GoogleCliToolDefinition,
 } from './cli-types';
 
@@ -29,7 +30,11 @@ function buildStructuredArgs(params: GoogleToolParamsValue): string[] {
   return [params.service, params.action, ...(params.args ?? [])];
 }
 
-interface GoogleCliContextCandidate extends Partial<GoogleCliContext> {
+interface GoogleCliContextCandidate {
+  workspaceId?: string;
+  workspaceManager?: GoogleCliContext['workspaceManager'];
+  containerManager?: GoogleCliContext['containerManager'];
+  access?: GoogleCliAccessMode;
   invocation?: { source?: string };
   agentContext?: unknown;
   sessionRuntime?: unknown;
@@ -40,6 +45,12 @@ function resolveCliAccess(candidate: GoogleCliContextCandidate): GoogleCliAccess
     return 'agent';
   }
   return 'operator';
+}
+
+function isSessionRuntime(value: unknown): value is GoogleCliSessionRuntime {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as { sendMessage?: unknown }).sendMessage === 'function';
 }
 
 function toCliContext(context: unknown): GoogleCliContext | undefined {
@@ -59,6 +70,7 @@ function toCliContext(context: unknown): GoogleCliContext | undefined {
     workspaceManager: candidate.workspaceManager,
     containerManager: candidate.containerManager,
     access: resolveCliAccess(candidate),
+    ...(isSessionRuntime(candidate.sessionRuntime) ? { sessionRuntime: candidate.sessionRuntime } : {}),
   };
 }
 

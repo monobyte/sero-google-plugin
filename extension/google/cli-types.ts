@@ -14,6 +14,20 @@ export interface GoogleCliResult {
   details?: unknown;
 }
 
+export type GoogleCliRuntimeContent = string | GoogleCliContentBlock[];
+
+export interface GoogleCliSessionRuntime {
+  sendMessage(
+    message: {
+      customType?: string;
+      content: GoogleCliRuntimeContent;
+      display: boolean;
+      details?: unknown;
+    },
+    options?: { triggerTurn?: boolean; deliverAs?: 'steer' | 'followUp' | 'nextTurn' },
+  ): void | Promise<void>;
+}
+
 export interface GoogleCliWorkspaceManager {
   isContainerEnabled(workspaceId: string): Promise<boolean>;
 }
@@ -39,6 +53,7 @@ export interface GoogleCliContext {
   workspaceManager: GoogleCliWorkspaceManager;
   containerManager: GoogleCliContainerManager;
   access?: GoogleCliAccessMode;
+  sessionRuntime?: GoogleCliSessionRuntime;
 }
 
 export interface GoogleCliBridgeDefinition {
