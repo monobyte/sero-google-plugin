@@ -1,96 +1,51 @@
 /**
- * gogcli execution helper — spawns `gog` with --json --no-input.
+ * gogcli execution helper — spawns `gog` with Sero's Google auth contract.
  *
- * Works on the host (Pi CLI or Sero main process). Probes common
- * install locations since Electron may not inherit the shell PATH.
- * Install via: brew install steipete/tap/gogcli
+ * Keeps the plugin aligned with the shell-owned runtime semantics by using
+ * profile-aware `--client` buckets, stable keyring passwords, credential
+ * import, and legacy-token migration before gog execution.
  */
 
-import { execFile } from 'node:child_process';
-import crypto from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { homedir, hostname, userInfo } from 'node:os';
-import path from 'node:path';
+import { getGoogleAuthManager } from './google/auth';
+import {
+  deriveKeyringPassword,
+  getGoogleClientName,
+} from './google/keyring';
+import {
+  buildGogPath,
+  execGog,
+  type GogExecResult,
+} from './google/runtime';
 
-export interface GogResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
+export type GogResult = GogExecResult;
 
 const GOG_TIMEOUT_MS = 30_000;
-
-const GOG_SEARCH_PATHS = [
-  '/opt/homebrew/bin/gog',
-  '/usr/local/bin/gog',
-  path.join(homedir(), '.local/bin/gog'),
-  path.join(homedir(), 'go/bin/gog'),
-];
-
-let _gogPath: string | null | undefined;
-
-function findGog(): string {
-  if (_gogPath !== undefined) return _gogPath ?? 'gog';
-  for (const p of GOG_SEARCH_PATHS) {
-    if (existsSync(p)) { _gogPath = p; return p; }
-  }
-  _gogPath = null;
-  return 'gog';
-}
-
-function enhancedPath(): string {
-  const existing = process.env.PATH || '';
-  const extra = ['/opt/homebrew/bin', '/usr/local/bin', path.join(homedir(), '.local/bin')];
-  return [...new Set([...extra, ...existing.split(':')])].join(':');
-}
-
-/**
- * Derive the same machine-specific keyring password that auth-manager.ts
- * uses when importing tokens. Must stay in sync with the derivation in
- * apps/desktop/electron/google/auth-manager.ts.
- */
-function deriveKeyringPassword(): string {
-  const host = hostname();
-  let uid: string;
-  try { uid = String(userInfo().uid); } catch { uid = 'unknown'; }
-  return crypto.createHash('sha256')
-    .update(`sero-google-keyring:${host}:${uid}`)
-    .digest('hex')
-    .slice(0, 32);
-}
 
 /**
  * Run a gogcli command and return raw output.
  */
-export function runGog(
+export async function runGog(
   args: string[],
   opts?: { account?: string; timeoutMs?: number; json?: boolean },
 ): Promise<GogResult> {
-  return new Promise((resolve) => {
-    const fullArgs: string[] = [];
-    if (opts?.account) fullArgs.push('--account', opts.account);
-    if (opts?.json !== false) fullArgs.push('--json');
-    fullArgs.push('--no-input', ...args);
+  const auth = getGoogleAuthManager();
+  const status = opts?.account ? null : await auth.getStatus();
+  await auth.ensureCredentialsAvailable();
 
-    const child = execFile(findGog(), fullArgs, {
-      timeout: opts?.timeoutMs ?? GOG_TIMEOUT_MS,
-      maxBuffer: 10 * 1024 * 1024,
-      env: { ...process.env, PATH: enhancedPath(), GOG_KEYRING_PASSWORD: deriveKeyringPassword() },
-    }, (error, stdout, stderr) => {
-      if (error && (error as any).code === 'ENOENT') {
-        resolve({ stdout: '', stderr: 'gog binary not found', exitCode: 127 });
-        return;
-      }
-      resolve({
-        stdout: stdout ?? '',
-        stderr: stderr ?? '',
-        exitCode: error ? ((error as any).status ?? 1) : 0,
-      });
-    });
+  const fullArgs: string[] = ['--client', getGoogleClientName()];
+  const account = opts?.account ?? (status?.authenticated ? status.email : auth.getEmail()) ?? undefined;
+  if (account) fullArgs.push('--account', account);
+  if (opts?.json !== false) fullArgs.push('--json');
+  fullArgs.push('--no-input', ...args);
 
-    child.on('error', (err) => {
-      resolve({ stdout: '', stderr: err.message, exitCode: 127 });
-    });
+  return execGog(fullArgs, {
+    timeoutMs: opts?.timeoutMs ?? GOG_TIMEOUT_MS,
+    maxBuffer: 10 * 1024 * 1024,
+    env: {
+      ...process.env,
+      PATH: buildGogPath(),
+      GOG_KEYRING_PASSWORD: deriveKeyringPassword(),
+    },
   });
 }
 
