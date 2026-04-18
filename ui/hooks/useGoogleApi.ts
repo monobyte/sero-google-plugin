@@ -6,8 +6,13 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { GoogleAppState, GmailThread, CalendarEvent } from '../../shared/types';
-import { parseGmailMessage } from '../components/gmail-parser';
+import {
+  applyCalendarCalendarsResult,
+  applyCalendarEventsResult,
+  applyGmailSearchResult,
+  applyGmailThreadResult,
+} from '../../shared/google-state';
+import type { GoogleAppState } from '../../shared/types';
 
 type StateUpdater = (fn: (prev: GoogleAppState) => GoogleAppState) => void;
 
@@ -26,12 +31,23 @@ interface SeroPluginConfigBridge {
 
 const PLUGIN_ID = 'sero-google-plugin';
 
+interface GooglePluginWindow extends Window {
+  sero?: {
+    google?: SeroGoogleBridge;
+    pluginConfig?: SeroPluginConfigBridge;
+  };
+}
+
+function getSeroWindow(): GooglePluginWindow {
+  return window as GooglePluginWindow;
+}
+
 function getSeroGoogle(): SeroGoogleBridge | null {
-  return (window as any).sero?.google ?? null;
+  return getSeroWindow().sero?.google ?? null;
 }
 
 function getPluginConfig(): SeroPluginConfigBridge | null {
-  return (window as any).sero?.pluginConfig ?? null;
+  return getSeroWindow().sero?.pluginConfig ?? null;
 }
 
 // ── Auth types ───────────────────────────────────────────────
@@ -141,7 +157,7 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
 
   // ── Data command executor ──────────────────────────────────
 
-  const exec = useCallback(async (service: string, args: string[]): Promise<any | null> => {
+  const exec = useCallback(async (service: string, args: string[]): Promise<unknown | null> => {
     setLoading(true);
     setError(null);
     try {
@@ -164,7 +180,7 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
         setError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
         return null;
       }
-      try { return JSON.parse(result.stdout); } catch { return result.stdout.trim(); }
+      try { return JSON.parse(result.stdout) as unknown; } catch { return result.stdout.trim(); }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       return null;
@@ -178,87 +194,37 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
   const fetchInbox = useCallback(async (query: string, max = 15) => {
     const data = await exec('gmail', ['search', query, '--max', String(max)]);
     if (!data) return;
-    const threads: GmailThread[] = (data.threads || []).map((t: any) => ({
-      id: t.id || '', snippet: t.snippet || '',
-      subject: t.messages?.[0]?.subject || t.subject || '(no subject)',
-      from: t.messages?.[0]?.from || t.from || '',
-      date: t.messages?.[0]?.date || t.date || '',
-      labelIds: t.messages?.[0]?.labels || t.labelIds || [],
-      isUnread: (t.messages?.[0]?.labels || t.labelIds || []).includes('UNREAD'),
-      messageCount: t.messages?.length || t.messageCount || 1,
-    }));
-    updateState((prev) => ({
-      ...prev,
-      gmail: { ...prev.gmail, threads, lastQuery: query, lastFetchedAt: new Date().toISOString() },
-    }));
+    updateState((prev) => applyGmailSearchResult(prev, data, query));
   }, [exec, updateState]);
 
   const fetchThread = useCallback(async (threadId: string) => {
     const data = await exec('gmail', ['thread', 'get', threadId]);
     if (!data) return;
-    const rawMessages: any[] = data.thread?.messages || data.messages || [];
-    const messages = rawMessages.map((m) => parseGmailMessage(m, threadId));
-    updateState((prev) => ({
-      ...prev,
-      gmail: { ...prev.gmail, selectedThreadId: threadId, selectedMessages: messages },
-    }));
+    updateState((prev) => applyGmailThreadResult(prev, data, threadId));
   }, [exec, updateState]);
-
-  const mapEvent = (e: any): CalendarEvent => ({
-    id: e.id || '', calendarId: e.organizer?.displayName || 'primary',
-    summary: e.summary || '(no title)',
-    start: e.start?.dateTime || e.start?.date || e.startLocal || '',
-    end: e.end?.dateTime || e.end?.date || e.endLocal || '',
-    startLocal: e.startLocal || '', endLocal: e.endLocal || '',
-    location: e.location || '', description: e.description || '',
-    attendees: (e.attendees || []).map((a: any) => {
-      const name = a.displayName || a.email || '';
-      const status = a.responseStatus ? ` (${a.responseStatus})` : '';
-      return a.self ? `${name}${status} — you` : `${name}${status}`;
-    }),
-    isAllDay: !!e.start?.date && !e.start?.dateTime,
-    status: e.status || '', htmlLink: e.htmlLink || '',
-    visibility: e.visibility || '', eventType: e.eventType || '',
-    sourceUrl: e.source?.url || '',
-    reminders: (e.reminders?.overrides || []).map((r: any) => ({
-      method: r.method || 'popup', minutes: r.minutes || 0,
-    })),
-    created: e.created || '', updated: e.updated || '',
-  });
 
   const fetchEvents = useCallback(async (view: 'today' | 'week') => {
     const flag = view === 'today' ? '--today' : '--week';
     const data = await exec('calendar', ['events', 'primary', flag]);
     if (!data) return;
-    const events = (data.events || []).map(mapEvent);
-    updateState((prev) => ({
-      ...prev,
-      calendar: { ...prev.calendar, events, view, lastFetchedAt: new Date().toISOString() },
+    updateState((prev) => applyCalendarEventsResult(prev, data, {
+      calendarId: 'primary',
+      view,
     }));
   }, [exec, updateState]);
 
   const fetchEventsRange = useCallback(async (from: string, to: string) => {
     const data = await exec('calendar', ['events', 'primary', '--from', from, '--to', to, '--max', '50']);
     if (!data) return;
-    const events = (data.events || []).map(mapEvent);
-    updateState((prev) => ({
-      ...prev,
-      calendar: { ...prev.calendar, events, lastFetchedAt: new Date().toISOString() },
+    updateState((prev) => applyCalendarEventsResult(prev, data, {
+      calendarId: 'primary',
     }));
   }, [exec, updateState]);
 
   const fetchCalendars = useCallback(async () => {
     const data = await exec('calendar', ['calendars']);
     if (!data) return;
-    updateState((prev) => ({
-      ...prev,
-      calendar: {
-        ...prev.calendar,
-        calendars: (data.calendars || []).map((c: any) => ({
-          id: c.id || '', summary: c.summary || c.id || '', primary: !!c.primary,
-        })),
-      },
-    }));
+    updateState((prev) => applyCalendarCalendarsResult(prev, data));
   }, [exec, updateState]);
 
   const sendEmail = useCallback(async (to: string, subject: string, body: string): Promise<boolean> => {

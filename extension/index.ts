@@ -13,9 +13,15 @@ import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Text } from '@mariozechner/pi-tui';
 import { Type } from '@sinclair/typebox';
 
+import {
+  applyCalendarCalendarsResult,
+  applyCalendarEventsResult,
+  applyGmailSearchResult,
+  applyGmailThreadResult,
+} from '../shared/google-state';
 import type { GoogleAppState } from '../shared/types';
 import { DEFAULT_GOOGLE_STATE } from '../shared/types';
-import { runGog, runGogJson } from './gogcli';
+import { runGog } from './gogcli';
 
 // ── State I/O ────────────────────────────────────────────────
 
@@ -42,6 +48,14 @@ async function writeState(filePath: string, state: GoogleAppState): Promise<void
   const tmpPath = `${filePath}.tmp.${Date.now()}`;
   await fs.writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf8');
   await fs.rename(tmpPath, filePath);
+}
+
+function parseJsonResponse(stdout: string): unknown | null {
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 // ── Tool parameters ──────────────────────────────────────────
@@ -112,23 +126,11 @@ export default function (pi: ExtensionAPI) {
           if (result.exitCode !== 0) {
             return { content: [{ type: 'text', text: result.stderr || 'Search failed' }], details: {} };
           }
-          // Store in state for UI
-          try {
-            const data = JSON.parse(result.stdout);
-            state.gmail.threads = (data.threads || []).map((t: any) => ({
-              id: t.id || '',
-              snippet: t.snippet || '',
-              subject: t.messages?.[0]?.subject || t.subject || '(no subject)',
-              from: t.messages?.[0]?.from || t.from || '',
-              date: t.messages?.[0]?.date || t.date || '',
-              labelIds: t.messages?.[0]?.labels || t.labelIds || [],
-              isUnread: (t.messages?.[0]?.labels || t.labelIds || []).includes('UNREAD'),
-              messageCount: t.messages?.length || t.messageCount || 1,
-            }));
-            state.gmail.lastQuery = q;
-            state.gmail.lastFetchedAt = new Date().toISOString();
-            await writeState(statePath, state);
-          } catch { /* output is still returned below */ }
+
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyGmailSearchResult(state, data, q));
+          }
           return { content: [{ type: 'text', text: result.stdout }], details: {} };
         }
 
@@ -138,21 +140,11 @@ export default function (pi: ExtensionAPI) {
           if (result.exitCode !== 0) {
             return { content: [{ type: 'text', text: result.stderr || 'Failed to read thread' }], details: {} };
           }
-          try {
-            const data = JSON.parse(result.stdout);
-            state.gmail.selectedThreadId = params.thread_id;
-            state.gmail.selectedMessages = (data.thread?.messages || data.messages || []).map((m: any) => ({
-              id: m.id || '',
-              threadId: m.threadId || params.thread_id,
-              from: m.from || '',
-              to: m.to || '',
-              subject: m.subject || '',
-              date: m.date || '',
-              body: m.body || m.snippet || '',
-              snippet: m.snippet || '',
-            }));
-            await writeState(statePath, state);
-          } catch { /* pass */ }
+
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyGmailThreadResult(state, data, params.thread_id));
+          }
           return { content: [{ type: 'text', text: result.stdout }], details: {} };
         }
 
@@ -231,26 +223,14 @@ export default function (pi: ExtensionAPI) {
           if (result.exitCode !== 0) {
             return { content: [{ type: 'text', text: result.stderr || 'Failed to fetch events' }], details: {} };
           }
-          try {
-            const data = JSON.parse(result.stdout);
-            state.calendar.events = (data.events || []).map((e: any) => ({
-              id: e.id || '',
+
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyCalendarEventsResult(state, data, {
               calendarId: calId,
-              summary: e.summary || '(no title)',
-              start: e.start?.dateTime || e.start?.date || e.startLocal || '',
-              end: e.end?.dateTime || e.end?.date || e.endLocal || '',
-              startLocal: e.startLocal || '',
-              endLocal: e.endLocal || '',
-              location: e.location || '',
-              description: e.description || '',
-              attendees: e.attendees?.map((a: any) => a.email || a) || [],
-              isAllDay: !!e.start?.date && !e.start?.dateTime,
-              status: e.status || '',
+              view: params.action,
             }));
-            state.calendar.view = params.action;
-            state.calendar.lastFetchedAt = new Date().toISOString();
-            await writeState(statePath, state);
-          } catch { /* pass */ }
+          }
           return { content: [{ type: 'text', text: result.stdout }], details: {} };
         }
 
@@ -281,15 +261,10 @@ export default function (pi: ExtensionAPI) {
 
         case 'calendars': {
           const result = await runGog(['calendar', 'calendars'], { json: true });
-          try {
-            const data = JSON.parse(result.stdout);
-            state.calendar.calendars = (data.calendars || []).map((c: any) => ({
-              id: c.id || '',
-              summary: c.summary || c.id || '',
-              primary: !!c.primary,
-            }));
-            await writeState(statePath, state);
-          } catch { /* pass */ }
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyCalendarCalendarsResult(state, data));
+          }
           return { content: [{ type: 'text', text: result.stdout || result.stderr }], details: {} };
         }
 
