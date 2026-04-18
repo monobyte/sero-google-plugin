@@ -56,6 +56,39 @@ describe('Google CLI handlers', () => {
     );
   });
 
+  it('keeps successful CLI results even when follow-up delivery fails', async () => {
+    const sendMessage = vi.fn(async () => {
+      throw new Error('session closed');
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.runGoogleCliGog.mockResolvedValueOnce({
+      stdout: 'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const result = await handleGoogleCliCommand(
+      ['gmail', 'url', 'thread-1'],
+      {
+        workspaceId: 'ws-1',
+        workspaceManager: { isContainerEnabled: vi.fn(async () => false) },
+        containerManager: { hasContainer: vi.fn(() => false), exec: vi.fn() },
+        access: 'agent',
+        sessionRuntime: { sendMessage },
+      },
+    );
+
+    expect(result).toEqual({
+      output: 'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      exitCode: 0,
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[google-cli] Failed to emit follow-up summary:',
+      'session closed',
+    );
+    warnSpy.mockRestore();
+  });
+
   it('reuses the shell-compatible top-level summary/help text', () => {
     expect(GOOGLE_CLI_SUMMARY).toContain('Gmail, Calendar, auth');
     expect(GOOGLE_CLI_HELP).toContain('sero google auth list');
