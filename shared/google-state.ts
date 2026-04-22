@@ -1,6 +1,7 @@
 import type {
   CalendarEvent,
   CalendarInfo,
+  CalendarViewFilter,
   GmailMessage,
   GmailThread,
   GoogleAppState,
@@ -90,9 +91,12 @@ function decodeHtmlEntities(value: string): string {
 function mapGmailThread(threadValue: unknown): GmailThread {
   const thread = getRecord(threadValue) ?? {};
   const firstMessage = getRecord(getArray(thread.messages)[0]) ?? {};
-  const labelIds = getStringArray(firstMessage.labels).length > 0
-    ? getStringArray(firstMessage.labels)
-    : getStringArray(thread.labelIds);
+  const labelIds = Array.from(new Set([
+    ...getStringArray(thread.labelIds),
+    ...getStringArray(thread.labels),
+    ...getStringArray(firstMessage.labelIds),
+    ...getStringArray(firstMessage.labels),
+  ]));
 
   return {
     id: getString(thread.id),
@@ -103,6 +107,18 @@ function mapGmailThread(threadValue: unknown): GmailThread {
     labelIds,
     isUnread: labelIds.includes('UNREAD'),
     messageCount: getArray(thread.messages).length || Number(thread.messageCount ?? 1) || 1,
+  };
+}
+
+function markThreadRead(thread: GmailThread): GmailThread {
+  if (!thread.isUnread && !thread.labelIds.includes('UNREAD')) {
+    return thread;
+  }
+
+  return {
+    ...thread,
+    labelIds: thread.labelIds.filter((label) => label !== 'UNREAD'),
+    isUnread: false,
   };
 }
 
@@ -241,16 +257,70 @@ export function applyGmailThreadResult(
     ...previousState,
     gmail: {
       ...previousState.gmail,
+      threads: previousState.gmail.threads.map((thread) => (
+        thread.id === threadId ? markThreadRead(thread) : thread
+      )),
       selectedThreadId: threadId,
       selectedMessages: messages.map((message) => parseGmailMessage(message, threadId)),
     },
   };
 }
 
+function isDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function parseCalendarDate(value: string): Date | null {
+  if (!value) return null;
+
+  if (isDateOnly(value)) {
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getCalendarEventTime(event: CalendarEvent, edge: 'start' | 'end'): number | null {
+  const localValue = edge === 'start' ? event.startLocal : event.endLocal;
+  const rawValue = edge === 'start' ? event.start : event.end;
+  const date = parseCalendarDate(localValue || rawValue);
+  return date ? date.getTime() : null;
+}
+
+function eventOverlapsRange(event: CalendarEvent, from: string, to: string): boolean {
+  const rangeStart = parseCalendarDate(from);
+  const rangeEnd = parseCalendarDate(to);
+  const eventStart = getCalendarEventTime(event, 'start');
+  const eventEnd = getCalendarEventTime(event, 'end') ?? eventStart;
+
+  if (!rangeStart || !rangeEnd || eventStart === null || eventEnd === null) {
+    return false;
+  }
+
+  const safeEventEnd = eventEnd > eventStart ? eventEnd : eventStart + 1;
+  const safeRangeEnd = rangeEnd.getTime() > rangeStart.getTime()
+    ? rangeEnd.getTime()
+    : rangeStart.getTime() + 1;
+
+  return eventStart < safeRangeEnd && safeEventEnd > rangeStart.getTime();
+}
+
+function sortCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
+  return [...events].sort((left, right) => {
+    const leftStart = getCalendarEventTime(left, 'start') ?? Number.MAX_SAFE_INTEGER;
+    const rightStart = getCalendarEventTime(right, 'start') ?? Number.MAX_SAFE_INTEGER;
+    if (leftStart !== rightStart) return leftStart - rightStart;
+    return left.summary.localeCompare(right.summary);
+  });
+}
+
 export interface ApplyCalendarEventsOptions {
   calendarId?: string;
   fetchedAt?: string;
-  view?: 'today' | 'week';
+  view?: CalendarViewFilter;
+  mergeRange?: { from: string; to: string };
 }
 
 export function applyCalendarEventsResult(
@@ -261,11 +331,21 @@ export function applyCalendarEventsResult(
   const events = extractNamedArray(response, 'events');
   if (!events) return previousState;
 
+  const mappedEvents = events.map((event) => mapCalendarEvent(event, options.calendarId ?? 'primary'));
+  const nextEvents = options.mergeRange
+    ? sortCalendarEvents([
+      ...previousState.calendar.events.filter(
+        (event) => !eventOverlapsRange(event, options.mergeRange?.from ?? '', options.mergeRange?.to ?? ''),
+      ),
+      ...mappedEvents,
+    ])
+    : sortCalendarEvents(mappedEvents);
+
   return {
     ...previousState,
     calendar: {
       ...previousState.calendar,
-      events: events.map((event) => mapCalendarEvent(event, options.calendarId ?? 'primary')),
+      events: nextEvents,
       view: options.view ?? previousState.calendar.view,
       lastFetchedAt: options.fetchedAt ?? new Date().toISOString(),
     },

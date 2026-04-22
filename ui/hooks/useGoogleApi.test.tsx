@@ -304,6 +304,7 @@ describe('useGoogleApi', () => {
     await act(async () => {
       await result.current.fetchEvents('today');
       await result.current.fetchEventsRange('2026-04-01', '2026-05-01');
+      await result.current.fetchEventsDate('2026-04-18');
       await result.current.fetchCalendars();
     });
 
@@ -318,7 +319,15 @@ describe('useGoogleApi', () => {
       to: '2026-05-01',
       max: 50,
     });
-    expect(runMock).toHaveBeenNthCalledWith(3, 'google', 'global', 'gcal', { action: 'calendars' });
+    expect(runMock).toHaveBeenNthCalledWith(3, 'google', 'global', 'gcal', {
+      action: 'range',
+      calendar_id: 'primary',
+      from: '2026-04-18',
+      to: '2026-04-19',
+      max: 50,
+      merge: true,
+    });
+    expect(runMock).toHaveBeenNthCalledWith(4, 'google', 'global', 'gcal', { action: 'calendars' });
 
     expect(stateHarness.getState().calendar.calendars).toEqual([
       { id: 'primary', summary: 'Primary', primary: true },

@@ -6,10 +6,17 @@
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Clock, MapPin, Users, CalendarDays } from 'lucide-react';
-import type { GoogleAppState, CalendarEvent } from '../../shared/types';
+import { Clock, MapPin, Users, CalendarDays, RefreshCw, X } from 'lucide-react';
+import type { GoogleAppState, CalendarEvent, CalendarViewFilter } from '../../shared/types';
 import type { GoogleApi } from '../hooks/useGoogleApi';
-import { formatRelativeDate, formatTimeRange, groupEventsByDay } from './format-utils';
+import {
+  formatRelativeDate,
+  formatTimeRange,
+  groupEventsByDay,
+  getEventDateKey,
+  getMonthRange,
+  toDateKey,
+} from './format-utils';
 import { MiniCalendar } from './MiniCalendar';
 import { EventDetail } from './EventDetail';
 
@@ -19,72 +26,110 @@ interface CalendarViewProps {
   state: GoogleAppState;
   updateState: StateUpdater;
   google: GoogleApi;
+  visibleMonth: Date;
+  onVisibleMonthChange: (month: Date) => void;
 }
 
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function filterEventsByView(events: CalendarEvent[], view: CalendarViewFilter): CalendarEvent[] {
+  if (view === 'all') return events;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (view === 'today') {
+    const todayKey = toDateKey(today);
+    return events.filter((event) => getEventDateKey(event) === todayKey);
+  }
+
+  const startOfWeek = new Date(today);
+  const weekday = (today.getDay() + 6) % 7;
+  startOfWeek.setDate(startOfWeek.getDate() - weekday);
+
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+  return events.filter((event) => {
+    const eventDateKey = getEventDateKey(event);
+    if (!eventDateKey) return false;
+
+    const eventDate = new Date(`${eventDateKey}T00:00:00`);
+    return eventDate >= startOfWeek && eventDate < endOfWeek;
+  });
 }
 
-export function CalendarView({ state, updateState, google }: CalendarViewProps) {
+export function CalendarView({ state, updateState, google, visibleMonth, onVisibleMonthChange }: CalendarViewProps) {
   const { events, view, lastFetchedAt } = state.calendar;
-  const [calMonth, setCalMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-  const setView = useCallback((v: 'today' | 'week') => {
-    updateState((prev) => ({ ...prev, calendar: { ...prev.calendar, view: v } }));
-    google.fetchEvents(v);
+  const setView = useCallback((nextView: CalendarViewFilter) => {
+    updateState((prev) => ({
+      ...prev,
+      calendar: {
+        ...prev.calendar,
+        view: prev.calendar.view === nextView ? 'all' : nextView,
+      },
+    }));
     setSelectedEvent(null);
-  }, [updateState, google]);
+  }, [updateState]);
 
   // Dates that have events (for mini calendar dots)
   const eventDates = useMemo(() => {
     const dates = new Set<string>();
-    for (const e of events) {
-      const d = new Date(e.start || e.startLocal || '');
-      if (!isNaN(d.getTime())) dates.add(toDateKey(d));
+    for (const event of events) {
+      const eventDateKey = getEventDateKey(event);
+      if (eventDateKey) dates.add(eventDateKey);
     }
     return dates;
   }, [events]);
 
-  // Filter events to selected date, or show all
+  // Selecting a specific day overrides the list filter.
   const displayEvents = useMemo(() => {
-    if (!selectedDate) return events;
-    return events.filter((e) => {
-      const d = new Date(e.start || e.startLocal || '');
-      return !isNaN(d.getTime()) && toDateKey(d) === selectedDate;
-    });
-  }, [events, selectedDate]);
+    if (selectedDate) {
+      return events.filter((event) => getEventDateKey(event) === selectedDate);
+    }
+    return filterEventsByView(events, view);
+  }, [events, selectedDate, view]);
 
   const groupedEvents = useMemo(() => groupEventsByDay(displayEvents), [displayEvents]);
+  const selectedDateLabel = useMemo(() => (
+    selectedDate
+      ? new Date(`${selectedDate}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : ''
+  ), [selectedDate]);
 
   const handleSelectDate = useCallback((date: string) => {
-    setSelectedDate((prev) => prev === date ? null : date);
+    setSelectedDate((prev) => (prev === date ? null : date));
     setSelectedEvent(null);
   }, []);
 
   const handleChangeMonth = useCallback((delta: number) => {
-    setCalMonth((prev) => {
-      const d = new Date(prev);
-      d.setMonth(d.getMonth() + delta);
-      return d;
-    });
+    const next = new Date(visibleMonth);
+    next.setMonth(next.getMonth() + delta);
+    onVisibleMonthChange(next);
+  }, [onVisibleMonthChange, visibleMonth]);
+
+  const handleRefreshSelectedDate = useCallback(() => {
+    if (!selectedDate) return;
+    setSelectedEvent(null);
+    google.fetchEventsDate(selectedDate);
+  }, [google, selectedDate]);
+
+  const handleClearSelectedDate = useCallback(() => {
+    setSelectedDate(null);
+    setSelectedEvent(null);
   }, []);
 
-  // Fetch events for the visible month when it changes
+  // Fetch events for the visible month when it changes.
   const lastFetchedMonth = useRef('');
   useEffect(() => {
-    const year = calMonth.getFullYear();
-    const mo = calMonth.getMonth();
-    const key = `${year}-${mo}`;
+    const key = `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`;
     if (key === lastFetchedMonth.current) return;
     lastFetchedMonth.current = key;
 
-    const from = `${year}-${String(mo + 1).padStart(2, '0')}-01`;
-    const nextMo = new Date(year, mo + 1, 1);
-    const to = `${nextMo.getFullYear()}-${String(nextMo.getMonth() + 1).padStart(2, '0')}-01`;
+    const { from, to } = getMonthRange(visibleMonth);
     google.fetchEventsRange(from, to);
-  }, [calMonth, google]);
+  }, [google, visibleMonth]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -93,12 +138,24 @@ export function CalendarView({ state, updateState, google }: CalendarViewProps) 
         <ViewToggle active={view === 'today'} label="Today" onClick={() => setView('today')} />
         <ViewToggle active={view === 'week'} label="This Week" onClick={() => setView('week')} />
         {selectedDate && (
-          <button
-            onClick={() => { setSelectedDate(null); setSelectedEvent(null); }}
-            className="ml-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400 hover:bg-blue-500/20"
-          >
-            {new Date(selectedDate + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ✕
-          </button>
+          <div className="ml-1 flex items-center gap-1">
+            <button
+              onClick={handleRefreshSelectedDate}
+              disabled={google.loading}
+              aria-label={`Refresh events for ${selectedDateLabel}`}
+              className="flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400 hover:bg-blue-500/20 disabled:opacity-50"
+            >
+              <RefreshCw className={`size-2.5 ${google.loading ? 'animate-spin' : ''}`} />
+              {selectedDateLabel}
+            </button>
+            <button
+              onClick={handleClearSelectedDate}
+              aria-label="Clear selected date"
+              className="rounded-md bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              <X className="size-2.5" />
+            </button>
+          </div>
         )}
         <div className="flex-1" />
         {lastFetchedAt && (
@@ -111,7 +168,7 @@ export function CalendarView({ state, updateState, google }: CalendarViewProps) 
         {/* Mini calendar sidebar */}
         <div className="w-[180px] shrink-0 border-r border-[var(--border-subtle)] p-2">
           <MiniCalendar
-            month={calMonth}
+            month={visibleMonth}
             selectedDate={selectedDate}
             eventDates={eventDates}
             onSelectDate={handleSelectDate}
@@ -126,13 +183,14 @@ export function CalendarView({ state, updateState, google }: CalendarViewProps) 
           ) : displayEvents.length === 0 ? (
             <EmptyCalendar loading={google.loading} error={google.error} />
           ) : (
-            <div className="h-full overflow-y-auto p-2 space-y-3">
+            <div className="h-full space-y-3 overflow-y-auto p-2">
               {groupedEvents.map(([dayLabel, dayEvents]) => (
                 <DayGroup key={dayLabel} label={dayLabel} events={dayEvents} onSelect={setSelectedEvent} />
               ))}
               <div className="px-1 pb-1 text-[10px] text-[var(--text-muted)]">
                 {displayEvents.length} event{displayEvents.length !== 1 ? 's' : ''}
-                {' · last synced '}{formatRelativeDate(lastFetchedAt || '')}
+                {' · last synced '}
+                {formatRelativeDate(lastFetchedAt || '')}
               </div>
             </div>
           )}
@@ -149,7 +207,8 @@ function ViewToggle({ active, label, onClick }: { active: boolean; label: string
     <button
       onClick={onClick}
       className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-        active ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+        active
+          ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]'
           : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/60 hover:text-[var(--text-secondary)]'
       }`}
     >
@@ -179,7 +238,9 @@ function EventCard({ event, index, onClick }: { event: CalendarEvent; index: num
     <button
       onClick={onClick}
       className={`animate-g-fade-in w-full overflow-hidden rounded-lg border text-left transition-colors hover:border-blue-500/30 ${
-        isPast ? 'border-[var(--border-subtle)]/50 bg-[var(--bg-elevated)]/25' : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50'
+        isPast
+          ? 'border-[var(--border-subtle)]/50 bg-[var(--bg-elevated)]/25'
+          : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50'
       }`}
       style={{ animationDelay: `${index * 20}ms` }}
     >
@@ -193,16 +254,19 @@ function EventCard({ event, index, onClick }: { event: CalendarEvent; index: num
           </span>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
             <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-              <Clock className="size-2.5" />{timeRange}
+              <Clock className="size-2.5" />
+              {timeRange}
             </span>
             {event.location && (
               <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                <MapPin className="size-2.5" /><span className="max-w-[150px] truncate">{event.location}</span>
+                <MapPin className="size-2.5" />
+                <span className="max-w-[150px] truncate">{event.location}</span>
               </span>
             )}
             {event.attendees && event.attendees.length > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                <Users className="size-2.5" />{event.attendees.length}
+                <Users className="size-2.5" />
+                {event.attendees.length}
               </span>
             )}
           </div>
@@ -217,17 +281,17 @@ function EmptyCalendar({ loading, error }: { loading: boolean; error: string | n
     <div className="flex h-full flex-col items-center justify-center text-center">
       {loading ? (
         <>
-          <div className="size-8 rounded-full border-2 border-[var(--border-subtle)] border-t-blue-500 animate-spin mb-3" />
+          <div className="mb-3 size-8 animate-spin rounded-full border-2 border-[var(--border-subtle)] border-t-blue-500" />
           <p className="text-[12px] text-[var(--text-muted)]">Fetching events…</p>
         </>
       ) : error ? (
         <>
-          <CalendarDays className="size-6 text-red-400/60 mb-3" />
+          <CalendarDays className="mb-3 size-6 text-red-400/60" />
           <p className="text-[12px] text-red-400">{error}</p>
         </>
       ) : (
         <>
-          <CalendarDays className="size-6 text-[var(--text-muted)]/40 mb-3" />
+          <CalendarDays className="mb-3 size-6 text-[var(--text-muted)]/40" />
           <p className="text-[12px] text-[var(--text-muted)]">No events</p>
         </>
       )}

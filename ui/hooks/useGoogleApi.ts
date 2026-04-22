@@ -71,6 +71,16 @@ function truncateError(message: string): string {
   return message.length > 120 ? `${message.slice(0, 120)}…` : message;
 }
 
+function toDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return toDateKey(date);
+}
+
 // ── Auth types ───────────────────────────────────────────────
 
 export type AuthStatus = 'unknown' | 'checking' | 'not-configured' | 'signed-out' | 'signing-in' | 'authenticated' | 'expired';
@@ -94,7 +104,8 @@ export interface GoogleApi {
   fetchInbox: (query: string, max?: number) => Promise<void>;
   fetchThread: (threadId: string) => Promise<void>;
   fetchEvents: (view: 'today' | 'week') => Promise<void>;
-  fetchEventsRange: (from: string, to: string) => Promise<void>;
+  fetchEventsRange: (from: string, to: string, options?: { merge?: boolean; max?: number }) => Promise<void>;
+  fetchEventsDate: (date: string) => Promise<void>;
   fetchCalendars: () => Promise<void>;
   sendEmail: (to: string, subject: string, body: string) => Promise<boolean>;
   archiveThread: (threadId: string) => Promise<boolean>;
@@ -276,15 +287,24 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
     await runDataTool('gcal', { action: view, calendar_id: 'primary' });
   }, [runDataTool]);
 
-  const fetchEventsRange = useCallback(async (from: string, to: string) => {
+  const fetchEventsRange = useCallback(async (
+    from: string,
+    to: string,
+    options?: { merge?: boolean; max?: number },
+  ) => {
     await runDataTool('gcal', {
       action: 'range',
       calendar_id: 'primary',
       from,
       to,
-      max: 50,
+      max: options?.max ?? 50,
+      ...(options?.merge ? { merge: true } : {}),
     });
   }, [runDataTool]);
+
+  const fetchEventsDate = useCallback(async (date: string) => {
+    await fetchEventsRange(date, addDays(date, 1), { merge: true });
+  }, [fetchEventsRange]);
 
   const fetchCalendars = useCallback(async () => {
     await runDataTool('gcal', { action: 'calendars' });
@@ -310,6 +330,7 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
     fetchThread,
     fetchEvents,
     fetchEventsRange,
+    fetchEventsDate,
     fetchCalendars,
     sendEmail,
     archiveThread,
@@ -325,6 +346,7 @@ export function useGoogleApi(updateState: StateUpdater): GoogleApi {
     fetchThread,
     fetchEvents,
     fetchEventsRange,
+    fetchEventsDate,
     fetchCalendars,
     sendEmail,
     archiveThread,

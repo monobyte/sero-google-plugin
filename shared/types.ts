@@ -63,6 +63,8 @@ export interface CalendarInfo {
   primary: boolean;
 }
 
+export type CalendarViewFilter = 'all' | 'today' | 'week';
+
 // ── App state ────────────────────────────────────────────────
 
 export interface GoogleAppState {
@@ -76,13 +78,15 @@ export interface GoogleAppState {
     selectedMessages: GmailMessage[];
     lastQuery: string;
     lastFetchedAt: string | null;
+    autoRefreshIntervalMinutes: number;
+    notificationsEnabled: boolean;
   };
 
   /** Calendar cached data. */
   calendar: {
     events: CalendarEvent[];
     calendars: CalendarInfo[];
-    view: 'today' | 'week';
+    view: CalendarViewFilter;
     lastFetchedAt: string | null;
   };
 
@@ -98,12 +102,34 @@ export const DEFAULT_GOOGLE_STATE: GoogleAppState = {
     selectedMessages: [],
     lastQuery: 'newer_than:3d',
     lastFetchedAt: null,
+    autoRefreshIntervalMinutes: 5,
+    notificationsEnabled: true,
   },
   calendar: {
     events: [],
     calendars: [],
-    view: 'today',
+    view: 'all',
     lastFetchedAt: null,
   },
   activeAccount: null,
 };
+
+export function normalizeGoogleState(state: unknown): GoogleAppState {
+  if (!state || typeof state !== 'object') {
+    return structuredClone(DEFAULT_GOOGLE_STATE);
+  }
+
+  const candidate = state as Partial<GoogleAppState>;
+  return {
+    ...DEFAULT_GOOGLE_STATE,
+    ...candidate,
+    gmail: {
+      ...DEFAULT_GOOGLE_STATE.gmail,
+      ...candidate.gmail,
+    },
+    calendar: {
+      ...DEFAULT_GOOGLE_STATE.calendar,
+      ...candidate.calendar,
+    },
+  };
+}

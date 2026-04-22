@@ -7,7 +7,7 @@
  * data fetching, and useAppState for persistent cached state.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppState } from '@sero-ai/app-runtime';
 import { Mail, CalendarDays, RefreshCw } from 'lucide-react';
 import type { GoogleAppState } from '../shared/types';
@@ -15,12 +15,14 @@ import { DEFAULT_GOOGLE_STATE } from '../shared/types';
 import { MailView } from './components/MailView';
 import { CalendarView } from './components/CalendarView';
 import { AuthSetup } from './components/AuthSetup';
+import { getMonthRange } from './components/format-utils';
 import { useGoogleApi } from './hooks/useGoogleApi';
 import './styles.css';
 
 export function GoogleApp() {
   const [state, updateState] = useAppState<GoogleAppState>(DEFAULT_GOOGLE_STATE);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const google = useGoogleApi(updateState);
 
   // Auto-focus container for keyboard events
@@ -34,7 +36,13 @@ export function GoogleApp() {
     google.checkAuth();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fetch data once authenticated (and stale)
+  const refreshCalendarMonth = useCallback(() => {
+    const { from, to } = getMonthRange(calendarMonth);
+    return google.fetchEventsRange(from, to);
+  }, [calendarMonth, google]);
+
+  // Auto-fetch calendar once authenticated when the calendar tab is initially open.
+  // Mail background syncing is handled by the app runtime.
   const hasFetched = useRef(false);
   useEffect(() => {
     if (hasFetched.current) return;
@@ -42,12 +50,11 @@ export function GoogleApp() {
     hasFetched.current = true;
 
     const staleMs = 5 * 60 * 1000;
-    const tab = state.activeTab;
-    const lastFetch = tab === 'mail' ? state.gmail.lastFetchedAt : state.calendar.lastFetchedAt;
+    if (state.activeTab !== 'calendar') return;
+    const lastFetch = state.calendar.lastFetchedAt;
 
     if (!lastFetch || Date.now() - new Date(lastFetch).getTime() > staleMs) {
-      if (tab === 'mail') google.fetchInbox(state.gmail.lastQuery || 'newer_than:3d');
-      else google.fetchEvents(state.calendar.view);
+      refreshCalendarMonth();
     }
   }, [google.auth.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -59,9 +66,9 @@ export function GoogleApp() {
     if (state.activeTab === 'mail') {
       google.fetchInbox(state.gmail.lastQuery || 'newer_than:3d');
     } else {
-      google.fetchEvents(state.calendar.view);
+      refreshCalendarMonth();
     }
-  }, [state.activeTab, state.gmail.lastQuery, state.calendar.view, google]);
+  }, [state.activeTab, state.gmail.lastQuery, google, refreshCalendarMonth]);
 
   const isReady = google.auth.status === 'authenticated';
 
@@ -117,7 +124,13 @@ export function GoogleApp() {
           state.activeTab === 'mail' ? (
             <MailView state={state} updateState={updateState} google={google} />
           ) : (
-            <CalendarView state={state} updateState={updateState} google={google} />
+            <CalendarView
+              state={state}
+              updateState={updateState}
+              google={google}
+              visibleMonth={calendarMonth}
+              onVisibleMonthChange={setCalendarMonth}
+            />
           )
         ) : null}
       </div>

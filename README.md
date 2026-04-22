@@ -247,3 +247,13 @@ $SERO_HOME/apps/google/state.json
 ```
 
 You usually do not need to touch this file manually.
+
+## Developer notes
+
+If you need to change Gmail background notifications or unread-state handling,
+start here:
+
+- [Notification notes](./docs/notifications.md)
+
+That note points at the canonical runtime, state-mapping, and host-bridge files
+so future debugging is faster.
