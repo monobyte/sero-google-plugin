@@ -62,9 +62,84 @@ describe('canonical Google state shaping', () => {
     });
   });
 
-  it('maps Gmail thread payloads with both plain text and HTML bodies', () => {
-    const nextState = applyGmailThreadResult(
+  it('keeps unread thread labels even when the first message labels are stale', () => {
+    const nextState = applyGmailSearchResult(
       DEFAULT_GOOGLE_STATE,
+      {
+        threads: [
+          {
+            id: 'thread-1',
+            snippet: 'Latest snippet',
+            labelIds: ['INBOX', 'UNREAD'],
+            messages: [
+              {
+                subject: 'Inbox subject',
+                from: 'Ada Lovelace <ada@example.com>',
+                date: '2026-04-18T10:05:00Z',
+                labels: ['INBOX'],
+              },
+            ],
+          },
+        ],
+      },
+      'label:inbox',
+      '2026-04-18T10:30:00Z',
+    );
+
+    expect(nextState.gmail.threads[0]).toMatchObject({
+      labelIds: ['INBOX', 'UNREAD'],
+      isUnread: true,
+    });
+  });
+
+  it('maps top-level gmail search labels into unread state', () => {
+    const nextState = applyGmailSearchResult(
+      DEFAULT_GOOGLE_STATE,
+      {
+        threads: [
+          {
+            id: 'thread-1',
+            subject: 'Inbox subject',
+            from: 'Ada Lovelace <ada@example.com>',
+            date: '2026-04-18T10:05:00Z',
+            labels: ['INBOX', 'UNREAD'],
+            messageCount: 1,
+          },
+        ],
+      },
+      'label:inbox',
+      '2026-04-18T10:30:00Z',
+    );
+
+    expect(nextState.gmail.threads[0]).toMatchObject({
+      labelIds: ['INBOX', 'UNREAD'],
+      isUnread: true,
+      subject: 'Inbox subject',
+      from: 'Ada Lovelace <ada@example.com>',
+      date: '2026-04-18T10:05:00Z',
+    });
+  });
+
+  it('maps Gmail thread payloads with both plain text and HTML bodies and marks the cached thread as read', () => {
+    const nextState = applyGmailThreadResult(
+      {
+        ...structuredClone(DEFAULT_GOOGLE_STATE),
+        gmail: {
+          ...structuredClone(DEFAULT_GOOGLE_STATE.gmail),
+          threads: [
+            {
+              id: 'thread-1',
+              snippet: 'Hi & welcome',
+              subject: 'Analytical Engine',
+              from: 'Ada Lovelace <ada@example.com>',
+              date: 'Fri, 18 Apr 2026 10:00:00 +0000',
+              labelIds: ['INBOX', 'UNREAD'],
+              isUnread: true,
+              messageCount: 1,
+            },
+          ],
+        },
+      },
       {
         thread: {
           messages: [
@@ -97,6 +172,11 @@ describe('canonical Google state shaping', () => {
       'thread-1',
     );
 
+    expect(nextState.gmail.threads[0]).toMatchObject({
+      id: 'thread-1',
+      labelIds: ['INBOX'],
+      isUnread: false,
+    });
     expect(nextState.gmail.selectedThreadId).toBe('thread-1');
     expect(nextState.gmail.selectedMessages).toEqual([
       {
@@ -180,6 +260,64 @@ describe('canonical Google state shaping', () => {
         },
       ],
     });
+  });
+
+  it('merges a refreshed date range into the existing cached month events', () => {
+    const previousState = {
+      ...structuredClone(DEFAULT_GOOGLE_STATE),
+      calendar: {
+        ...structuredClone(DEFAULT_GOOGLE_STATE.calendar),
+        events: [
+          {
+            id: 'event-old-day',
+            calendarId: 'primary',
+            summary: 'Old Day Event',
+            start: '2026-04-18T09:00:00Z',
+            end: '2026-04-18T09:30:00Z',
+            isAllDay: false,
+          },
+          {
+            id: 'event-other-day',
+            calendarId: 'primary',
+            summary: 'Other Day Event',
+            start: '2026-04-19T09:00:00Z',
+            end: '2026-04-19T09:30:00Z',
+            isAllDay: false,
+          },
+        ],
+      },
+    };
+
+    const nextState = applyCalendarEventsResult(
+      previousState,
+      {
+        events: [
+          {
+            id: 'event-new-day',
+            summary: 'New Day Event',
+            start: { dateTime: '2026-04-18T10:00:00Z' },
+            end: { dateTime: '2026-04-18T10:30:00Z' },
+          },
+        ],
+      },
+      {
+        calendarId: 'primary',
+        mergeRange: { from: '2026-04-18', to: '2026-04-19' },
+        fetchedAt: '2026-04-18T12:30:00Z',
+      },
+    );
+
+    expect(nextState.calendar.lastFetchedAt).toBe('2026-04-18T12:30:00Z');
+    expect(nextState.calendar.events).toMatchObject([
+      {
+        id: 'event-new-day',
+        summary: 'New Day Event',
+      },
+      {
+        id: 'event-other-day',
+        summary: 'Other Day Event',
+      },
+    ]);
   });
 
   it('maps calendar list responses into the shared state contract', () => {

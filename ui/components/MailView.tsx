@@ -6,13 +6,15 @@
  */
 
 import { useState, useCallback } from 'react';
-import { ChevronRight, ChevronLeft, Search, Archive, Mail, Inbox } from 'lucide-react';
+import { Search, Archive, Mail, Inbox } from 'lucide-react';
 import type { GoogleAppState, GmailThread } from '../../shared/types';
 import type { GoogleApi } from '../hooks/useGoogleApi';
 import { MailThread } from './MailThread';
 import { formatRelativeDate, extractName } from './format-utils';
 
 type StateUpdater = (fn: (prev: GoogleAppState) => GoogleAppState) => void;
+
+const AUTO_REFRESH_OPTIONS = [1, 5, 15, 30, 60] as const;
 
 interface MailViewProps {
   state: GoogleAppState;
@@ -23,6 +25,9 @@ interface MailViewProps {
 export function MailView({ state, updateState, google }: MailViewProps) {
   const [searchQuery, setSearchQuery] = useState(state.gmail.lastQuery || '');
   const { threads, selectedThreadId, selectedMessages } = state.gmail;
+  const autoRefreshIntervalMinutes = state.gmail.autoRefreshIntervalMinutes || 5;
+  const notificationsEnabled = state.gmail.notificationsEnabled !== false;
+  const lastUpdateLabel = state.gmail.lastFetchedAt ? formatRelativeDate(state.gmail.lastFetchedAt) : 'never';
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +62,29 @@ export function MailView({ state, updateState, google }: MailViewProps) {
     }
   }, [google, updateState]);
 
+  const handleAutoRefreshChange = useCallback((value: string) => {
+    const minutes = Number(value);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+
+    updateState((prev) => ({
+      ...prev,
+      gmail: {
+        ...prev.gmail,
+        autoRefreshIntervalMinutes: minutes,
+      },
+    }));
+  }, [updateState]);
+
+  const handleNotificationsToggle = useCallback((enabled: boolean) => {
+    updateState((prev) => ({
+      ...prev,
+      gmail: {
+        ...prev.gmail,
+        notificationsEnabled: enabled,
+      },
+    }));
+  }, [updateState]);
+
   // Thread detail view
   if (selectedThreadId && selectedMessages.length > 0) {
     return (
@@ -79,6 +107,30 @@ export function MailView({ state, updateState, google }: MailViewProps) {
           placeholder="Search Gmail…  (e.g. newer_than:7d, from:boss)"
           className="flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/60 outline-none"
         />
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+            Auto
+            <select
+              value={String(autoRefreshIntervalMinutes)}
+              onChange={(e) => handleAutoRefreshChange(e.target.value)}
+              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[10px] text-[var(--text-primary)] outline-none"
+            >
+              {AUTO_REFRESH_OPTIONS.map((minutes) => (
+                <option key={minutes} value={minutes}>{minutes}m</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+            <input
+              type="checkbox"
+              checked={notificationsEnabled}
+              onChange={(e) => handleNotificationsToggle(e.target.checked)}
+              className="size-3 rounded border border-[var(--border-subtle)]"
+            />
+            Notify
+          </label>
+          <span className="text-[10px] text-[var(--text-muted)]">Updated {lastUpdateLabel}</span>
+        </div>
         <button
           type="submit"
           disabled={!searchQuery.trim() || google.loading}

@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run --root .",
-    "typecheck": "tsc --noEmit -p ui/tsconfig.json && tsc --noEmit -p extension/tsconfig.json"
+    "typecheck": "tsc --noEmit -p ui/tsconfig.json && tsc --noEmit -p extension/tsconfig.json && tsc --noEmit -p runtime/tsconfig.json"
   },
   "pi": {
     "extensions": [
@@ -25,6 +25,7 @@
       "stateFile": ".sero/apps/google/state.json",
       "ui": "./dist/ui/remoteEntry.js",
       "component": "GoogleApp",
+      "runtime": "./runtime/index.ts",
       "devPort": 5186
     },
     "widgets": [
@@ -76,7 +77,8 @@
       "minSeroVersion": "0.1.0",
       "requiredHostCapabilities": [
         "appAgent.invokeTool",
-        "tool.cli"
+        "tool.cli",
+        "appRuntime.background"
       ],
       "preBuilt": false,
       "bridgeTools": [
@@ -98,6 +100,7 @@
   "devDependencies": {
     "@module-federation/vite": "^1.11.0",
     "@sero-ai/app-runtime": "^0.1.0",
+    "@sero-ai/common": "^0.1.0",
     "@tailwindcss/vite": "^4.1.18",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.19.11",

@@ -7,6 +7,33 @@
 
 import type { CalendarEvent } from '../../shared/types';
 
+export function toDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function isDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+export function getEventDateKey(event: Pick<CalendarEvent, 'start' | 'startLocal'>): string | null {
+  const value = event.startLocal || event.start;
+  if (!value) return null;
+  if (isDateOnly(value)) return value;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : toDateKey(date);
+}
+
+export function getMonthRange(date: Date): { from: string; to: string } {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const nextMonth = new Date(year, month + 1, 1);
+  const to = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
+
+  return { from, to };
+}
+
 // ── Date formatting ──────────────────────────────────────────
 
 /**
@@ -103,8 +130,10 @@ export function groupEventsByDay(events: CalendarEvent[]): [string, CalendarEven
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   for (const event of events) {
-    const eventDate = new Date(event.start || event.startLocal || '');
-    eventDate.setHours(0, 0, 0, 0);
+    const eventDateKey = getEventDateKey(event);
+    if (!eventDateKey) continue;
+
+    const eventDate = new Date(`${eventDateKey}T00:00:00`);
 
     let label: string;
     if (eventDate.getTime() === today.getTime()) {

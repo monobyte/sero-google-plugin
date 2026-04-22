@@ -50,6 +50,7 @@ const CalendarParams = Type.Object({
   location: Type.Optional(Type.String({ description: 'Event location (for create)' })),
   attendees: Type.Optional(Type.String({ description: 'Comma-separated emails (for create)' })),
   max: Type.Optional(Type.Number({ description: 'Max results (for range, default 50)' })),
+  merge: Type.Optional(Type.Boolean({ description: 'Merge range results into the existing cache instead of replacing it' })),
 });
 
 function parseJsonResponse(stdout: string): unknown | null {
@@ -122,6 +123,15 @@ export default function (pi: ExtensionAPI) {
           if (data) {
             await writeState(statePath, applyGmailThreadResult(state, data, params.thread_id));
           }
+
+          const markReadResult = await runGog(
+            ['gmail', 'labels', 'modify', params.thread_id, '--remove', 'UNREAD'],
+            { json: true },
+          );
+          if (markReadResult.exitCode !== 0) {
+            console.warn('[google] Failed to mark thread as read:', markReadResult.stderr || markReadResult.stdout);
+          }
+
           return textToolResult(result.stdout);
         }
 
@@ -235,6 +245,9 @@ export default function (pi: ExtensionAPI) {
           if (data) {
             await writeState(statePath, applyCalendarEventsResult(state, data, {
               calendarId: calId,
+              mergeRange: params.merge
+                ? { from: params.from, to: params.to }
+                : undefined,
             }));
           }
           return textToolResult(result.stdout);

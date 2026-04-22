@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { DEFAULT_GOOGLE_STATE, type GoogleAppState } from '../shared/types';
+import { DEFAULT_GOOGLE_STATE, normalizeGoogleState, type GoogleAppState } from '../shared/types';
 
 export function resolveStatePath(cwd: string): string {
   const seroHome = process.env.SERO_HOME;
@@ -14,7 +14,7 @@ export function resolveStatePath(cwd: string): string {
 export async function readState(filePath: string): Promise<GoogleAppState> {
   try {
     const raw = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(raw) as GoogleAppState;
+    return normalizeGoogleState(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_GOOGLE_STATE };
   }
