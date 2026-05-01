@@ -59,14 +59,44 @@ function sanitizeSrcSet(value: string): string | null {
   return safeEntries.length > 0 ? safeEntries.join(', ') : null;
 }
 
+function hasMeaningfulText(element: Element): boolean {
+  return Boolean(element.textContent?.replace(/\s+/g, ' ').trim());
+}
+
+function getRemoteImageAlt(image: HTMLImageElement): string | null {
+  const alt = image.getAttribute('alt')?.replace(/\s+/g, ' ').trim();
+  if (!alt) return null;
+
+  const normalized = alt.toLowerCase();
+  const decorativeAlts = new Set(['fb', 'tw', 'yt', 'tk', 'in', 'x', 'logo']);
+  if (decorativeAlts.has(normalized)) return null;
+
+  return alt;
+}
+
+function createImagePlaceholder(image: HTMLImageElement): HTMLElement | null {
+  const alt = getRemoteImageAlt(image);
+  if (!alt) return null;
+
+  const placeholder = image.ownerDocument.createElement('span');
+  placeholder.className = 'sero-email-image-placeholder';
+  placeholder.setAttribute('role', 'note');
+  placeholder.textContent = `Image blocked: ${alt}`;
+  return placeholder;
+}
+
 function replaceRemoteImage(image: HTMLImageElement): void {
-  const alt = image.getAttribute('alt')?.trim();
-  if (alt) {
-    image.replaceWith(image.ownerDocument.createTextNode(`[Image removed: ${alt}]`));
+  const placeholder = createImagePlaceholder(image);
+  const parentAnchor = image.closest('a');
+
+  if (parentAnchor && !hasMeaningfulText(parentAnchor)) {
+    if (placeholder) parentAnchor.replaceWith(placeholder);
+    else parentAnchor.remove();
     return;
   }
 
-  image.remove();
+  if (placeholder) image.replaceWith(placeholder);
+  else image.remove();
 }
 
 function sanitizeResourceAttributes(doc: Document): void {

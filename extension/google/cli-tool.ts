@@ -20,7 +20,7 @@ const GoogleToolParams = Type.Object({
   service: StringEnum(['auth', 'gmail', 'calendar'] as const),
   action: Type.String({ description: 'Google service action, e.g. list, search, events, create.' }),
   args: Type.Optional(Type.Array(Type.String(), {
-    description: 'Additional positional arguments and flags, in CLI token order.',
+    description: 'Additional positional arguments and flags, in CLI token order. Calendar create/update/freebusy/range times must be RFC3339 with a timezone offset or Z, e.g. 2026-05-05T14:30:00+01:00; do not pass bare local times.',
   })),
 });
 
@@ -84,7 +84,7 @@ export function createGoogleCliTool(): GoogleCliToolDefinition {
     name: 'google',
     label: 'Google Workspace',
     description:
-      'Google Workspace CLI parity tool. Preserves `sero google ...` auth, Gmail, and Calendar commands.',
+      'Google Workspace CLI parity tool. Preserves `sero google ...` auth, Gmail, and Calendar commands. For calendar create/update/freebusy/range, resolve relative dates before calling and pass RFC3339 date-times with a timezone offset or Z (for example 2026-05-05T14:30:00+01:00), never bare local times.',
     parameters: GoogleToolParams,
 
     async execute(_toolCallId, params) {

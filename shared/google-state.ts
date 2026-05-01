@@ -352,6 +352,35 @@ export function applyCalendarEventsResult(
   };
 }
 
+function extractCalendarEvent(response: unknown): unknown | null {
+  const record = getRecord(response);
+  if (!record) return null;
+  return getRecord(record.event) ?? record;
+}
+
+export function applyCalendarEventResult(
+  previousState: GoogleAppState,
+  response: unknown,
+  calendarId = 'primary',
+  fetchedAt: string = new Date().toISOString(),
+): GoogleAppState {
+  const eventValue = extractCalendarEvent(response);
+  if (!eventValue) return previousState;
+
+  const mappedEvent = mapCalendarEvent(eventValue, calendarId);
+  if (!mappedEvent.id) return previousState;
+
+  const withoutExisting = previousState.calendar.events.filter((event) => event.id !== mappedEvent.id);
+  return {
+    ...previousState,
+    calendar: {
+      ...previousState.calendar,
+      events: sortCalendarEvents([...withoutExisting, mappedEvent]),
+      lastFetchedAt: fetchedAt,
+    },
+  };
+}
+
 function mapCalendarInfo(calendarValue: unknown): CalendarInfo {
   const calendar = getRecord(calendarValue) ?? {};
   return {

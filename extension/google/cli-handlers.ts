@@ -47,12 +47,17 @@ export const GOOGLE_CLI_HELP =
   '    conflicts [flags]           Show conflicts\n\n' +
   'Global flags:\n' +
   '  --account <email|alias>       Select Google account\n\n' +
+  'Calendar time rules for agents:\n' +
+  '  - For create/update/freebusy/range, use RFC3339 date-times with a time zone offset or Z.\n' +
+  '  - Do NOT use bare local times like 9:00, 2026-05-05 14:30, or 2026-05-05T14:30:00.\n' +
+  '  - Resolve relative dates (today, next Tuesday) before calling the tool; include the local offset, e.g. +01:00.\n' +
+  '  - If unsure of the user\'s time zone, ask once instead of guessing.\n\n' +
   'Examples:\n' +
   '  sero google auth list\n' +
   '  sero google gmail search \'from:boss newer_than:1d\'\n' +
   '  sero google gmail send --to user@example.com --subject "Hi" --body "Hello"\n' +
   '  sero google calendar events primary --today\n' +
-  '  sero google calendar create primary --summary "Standup" --from 9:00 --to 9:30\n';
+  '  sero google calendar create primary --summary "Standup" --from "2026-05-05T09:00:00+01:00" --to "2026-05-05T09:30:00+01:00"\n';
 
 async function executeGoogleCli(
   service: string,
@@ -351,7 +356,8 @@ async function handleGoogleCalendar(args: string[], context?: GoogleCliContext):
       const calendarId = cleaned[0];
       if (!calendarId) {
         return fail(
-          'Usage: sero google calendar create <calendarId> --summary "<title>" --from <time> --to <time>\n' +
+          'Usage: sero google calendar create <calendarId> --summary "<title>" --from <rfc3339> --to <rfc3339>\n' +
+          'Times must include a time zone offset or Z, e.g. "2026-05-05T14:30:00+01:00". Do not use bare local times.\n' +
           'Options: --attendees "<emails>" --location "<loc>" --description "<desc>"',
         );
       }

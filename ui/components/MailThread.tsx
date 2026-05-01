@@ -176,17 +176,47 @@ function MessageCard({
 // ── HTML email renderer (sandboxed iframe) ───────────────────
 
 const EMAIL_STYLES = `
-  body {
-    margin: 0; padding: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 13px; line-height: 1.5;
-    color: #e0e0e0; background: transparent;
-    word-break: break-word;
+  html {
+    margin: 0;
+    background: transparent;
+    color-scheme: light;
   }
-  a { color: #60a5fa; }
+  body {
+    margin: 0;
+    min-height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #202124;
+    background: #ffffff;
+    overflow-wrap: break-word;
+  }
+  .sero-email-root {
+    min-height: 100%;
+    padding: 24px;
+    background: #ffffff;
+    color: #202124;
+  }
+  a { color: #1a73e8; }
   img { max-width: 100%; height: auto; }
   table { max-width: 100% !important; }
+  p { margin-top: 0; }
   * { max-width: 100% !important; box-sizing: border-box; }
+  .sero-email-image-placeholder {
+    display: inline-flex;
+    max-width: 100%;
+    margin: 4px 0;
+    padding: 5px 8px;
+    vertical-align: middle;
+    border: 1px dashed #d0d7de;
+    border-radius: 7px;
+    background: #f6f8fa;
+    color: #57606a !important;
+    font: 12px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    text-align: left;
+    text-decoration: none !important;
+    white-space: normal;
+  }
 `;
 
 /**
@@ -207,7 +237,7 @@ function HtmlBody({ html, fill = false }: { html: string; fill?: boolean }) {
     doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${EMAIL_STYLES} body { ${overflow} }</style>
-</head><body>${sanitizedHtml}</body></html>`);
+</head><body><div class="sero-email-root">${sanitizedHtml}</div></body></html>`);
     doc.close();
 
     if (!fill) {

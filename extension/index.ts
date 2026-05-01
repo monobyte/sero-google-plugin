@@ -13,6 +13,7 @@ import { Type } from '@sinclair/typebox';
 
 import {
   applyCalendarCalendarsResult,
+  applyCalendarEventResult,
   applyCalendarEventsResult,
   applyGmailSearchResult,
   applyGmailThreadResult,
@@ -45,9 +46,10 @@ const CalendarParams = Type.Object({
   calendar_id: Type.Optional(Type.String({ description: 'Calendar ID (default: primary)' })),
   event_id: Type.Optional(Type.String({ description: 'Event ID (for delete)' })),
   summary: Type.Optional(Type.String({ description: 'Event title (for create)' })),
-  from: Type.Optional(Type.String({ description: 'Start time ISO or natural (for create or range)' })),
-  to: Type.Optional(Type.String({ description: 'End time ISO or natural (for create or range)' })),
+  from: Type.Optional(Type.String({ description: 'Start time for create/range. Use RFC3339 with timezone offset or Z, e.g. 2026-05-05T14:30:00+01:00. Do not use bare local times.' })),
+  to: Type.Optional(Type.String({ description: 'End time for create/range. Use RFC3339 with timezone offset or Z, e.g. 2026-05-05T15:30:00+01:00. Do not use bare local times.' })),
   location: Type.Optional(Type.String({ description: 'Event location (for create)' })),
+  description: Type.Optional(Type.String({ description: 'Event description or notes (for create)' })),
   attendees: Type.Optional(Type.String({ description: 'Comma-separated emails (for create)' })),
   max: Type.Optional(Type.Number({ description: 'Max results (for range, default 50)' })),
   merge: Type.Optional(Type.Boolean({ description: 'Merge range results into the existing cache instead of replacing it' })),
@@ -198,7 +200,8 @@ export default function (pi: ExtensionAPI) {
     label: 'Google Calendar',
     description:
       'Access Google Calendar. Actions: today (today\'s events), week (this week), ' +
-      'range (events for a date range), search (find events), create (new event), delete (remove event), calendars (list).',
+      'range (events for a date range), search (find events), create (new event), delete (remove event), calendars (list). ' +
+      'For create/range, resolve relative dates first and pass RFC3339 times with a timezone offset or Z, e.g. 2026-05-05T14:30:00+01:00. Never use bare local times like 2026-05-05 14:30 or 2026-05-05T14:30:00.',
     parameters: CalendarParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -268,10 +271,16 @@ export default function (pi: ExtensionAPI) {
           }
           const args = ['calendar', 'create', calId, '--summary', params.summary, '--from', params.from, '--to', params.to];
           if (params.location) args.push('--location', params.location);
+          if (params.description) args.push('--description', params.description);
           if (params.attendees) args.push('--attendees', params.attendees);
           const result = await runGog(args, { json: true });
           if (result.exitCode !== 0) {
             return errorToolResult(result.stderr || 'Create failed');
+          }
+
+          const data = parseJsonResponse(result.stdout);
+          if (data) {
+            await writeState(statePath, applyCalendarEventResult(state, data, calId));
           }
           return textToolResult(`Created: ${params.summary}`);
         }

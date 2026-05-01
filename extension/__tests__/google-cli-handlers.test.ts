@@ -94,6 +94,8 @@ describe('Google CLI handlers', () => {
     expect(GOOGLE_CLI_HELP).toContain('sero google auth list');
     expect(GOOGLE_CLI_HELP).toContain('sero google gmail search');
     expect(GOOGLE_CLI_HELP).toContain('sero google calendar events primary --today');
+    expect(GOOGLE_CLI_HELP).toContain('RFC3339 date-times with a time zone offset or Z');
+    expect(GOOGLE_CLI_HELP).toContain('2026-05-05T09:00:00+01:00');
   });
 
   it('keeps auth management commands available for operator CLI usage', async () => {

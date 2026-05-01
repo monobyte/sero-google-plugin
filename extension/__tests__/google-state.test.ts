@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyCalendarCalendarsResult,
+  applyCalendarEventResult,
   applyCalendarEventsResult,
   applyGmailSearchResult,
   applyGmailThreadResult,
@@ -259,6 +260,54 @@ describe('canonical Google state shaping', () => {
           updated: '2026-04-17T11:00:00Z',
         },
       ],
+    });
+  });
+
+  it('merges a created calendar event into the cached UI state', () => {
+    const previousState = {
+      ...structuredClone(DEFAULT_GOOGLE_STATE),
+      calendar: {
+        ...structuredClone(DEFAULT_GOOGLE_STATE.calendar),
+        events: [
+          {
+            id: 'existing-event',
+            calendarId: 'primary',
+            summary: 'Existing Event',
+            start: '2026-05-05T09:00:00+01:00',
+            end: '2026-05-05T09:30:00+01:00',
+            isAllDay: false,
+          },
+        ],
+      },
+    };
+
+    const nextState = applyCalendarEventResult(
+      previousState,
+      {
+        event: {
+          id: 'created-event',
+          summary: 'Dentist Appointment',
+          start: { dateTime: '2026-05-05T14:30:00+01:00' },
+          end: { dateTime: '2026-05-05T15:30:00+01:00' },
+          description: 'Remember to bring the insurance card.',
+        },
+      },
+      'primary',
+      '2026-05-01T20:00:00Z',
+    );
+
+    expect(nextState.calendar.lastFetchedAt).toBe('2026-05-01T20:00:00Z');
+    expect(nextState.calendar.events.map((event) => event.id)).toEqual([
+      'existing-event',
+      'created-event',
+    ]);
+    expect(nextState.calendar.events[1]).toMatchObject({
+      id: 'created-event',
+      calendarId: 'primary',
+      summary: 'Dentist Appointment',
+      description: 'Remember to bring the insurance card.',
+      start: '2026-05-05T14:30:00+01:00',
+      end: '2026-05-05T15:30:00+01:00',
     });
   });
 
