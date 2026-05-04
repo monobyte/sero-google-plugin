@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { StringEnum } from '@mariozechner/pi-ai';
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Text } from '@mariozechner/pi-tui';
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 import { readState, resolveStatePath, writeState } from '../app-state';
 import { errorToolResult, textToolResult } from '../tool-results';
